@@ -22,6 +22,8 @@ import { CATEGORY_LABELS, TYPE_COLORS, TYPE_NAMES_PT } from '../theme/types.js';
 import {
   playBall,
   playBattleIntro,
+  playFieldIntro,
+  pushCamera,
   playEntrance,
   playFaint,
   playHit,
@@ -64,6 +66,7 @@ export function BattleScreen({
   playerLevel,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const worldRef = useRef<HTMLDivElement>(null);
   const playerSpriteRef = useRef<HTMLImageElement>(null);
   const foeSpriteRef = useRef<HTMLImageElement>(null);
   const busyRef = useRef(false);
@@ -158,6 +161,7 @@ export function BattleScreen({
           case 'useMove': {
             const move = ctx.moves[event.move];
             if (move) {
+              pushCamera(worldRef.current, animOptions);
               await playMove(
                 spriteRef(event.side).current,
                 spriteRef(event.side === 'player' ? 'foe' : 'player').current,
@@ -291,6 +295,8 @@ export function BattleScreen({
   useEffect(() => {
     void (async () => {
       void audio.playMusic(battleSong(battle.config.kind, battle.config.foeName));
+      // A cortina varre a tela enquanto a camera se aproxima do campo.
+      void playFieldIntro(worldRef.current, animOptions);
       await playBattleIntro(stageRef.current, animOptions);
       await play(battle.start());
     })();
@@ -305,19 +311,30 @@ export function BattleScreen({
 
   const active = battle.active('player');
   const foeActive = battle.active('foe');
+  const terrain = environment.isWater ? 'water' : environment.isCave ? 'cave' : 'grass';
 
   return (
     <div className="battle">
       <div className="battle-stage" ref={stageRef}>
-        <div
-          className={
-            environment.isWater
-              ? 'battle-bg battle-bg-water'
-              : environment.isCave
-                ? 'battle-bg battle-bg-cave'
-                : 'battle-bg'
-          }
-        />
+        {/*
+          O campo e montado em tres dimensoes de verdade, como nos jogos de
+          NDS: o chao e um plano deitado que foge para o horizonte e as duas
+          plataformas sao circulos no mesmo plano -- e a perspectiva que os
+          transforma em elipses. Os Pokemon ficam em pe por cima, como os
+          cartazes que a geracao 5 usava sobre o cenario 3D.
+        */}
+        <div className={`field field-${terrain}`}>
+          <div className="field-world" ref={worldRef}>
+            <div className="field-sky" />
+            <div className="field-scenery" />
+            <div className="field-haze" />
+            <div className="field-floor">
+              {/* Filhas do chao: ficam deitadas no mesmo plano, sem disputa. */}
+              <div className="field-platform field-platform-foe" />
+              <div className="field-platform field-platform-player" />
+            </div>
+          </div>
+        </div>
 
         <div className="battle-slot battle-slot-foe">
           <img

@@ -17,6 +17,29 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.4.1',
+    date: '2026-09-20',
+    title: 'Campo de batalha em tres dimensoes',
+    changes: [
+      {
+        kind: 'novo',
+        text: 'A batalha ganhou um campo 3D no estilo dos jogos de NDS: o chao foge para o horizonte, cada Pokemon pisa na sua plataforma redonda e o cenario ao longe fecha a cena.',
+      },
+      {
+        kind: 'novo',
+        text: 'A camera se aproxima quando a batalha comeca e da um empurrao a cada golpe, dando peso ao que acontece em campo.',
+      },
+      {
+        kind: 'melhoria',
+        text: 'Cenarios proprios para grama, agua e caverna, com plataformas e iluminacao de cada lugar.',
+      },
+      {
+        kind: 'melhoria',
+        text: 'Sombra dos Pokemon achatada como o chao, para eles ficarem apoiados na plataforma em vez de flutuando.',
+      },
+    ],
+  },
+  {
     version: '0.4.0',
     date: '2026-09-20',
     title: 'Barra inferior de vidro',

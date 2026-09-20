@@ -259,6 +259,42 @@ export async function playBattleIntro(
 }
 
 /**
+ * Camera do campo, no espirito dos jogos de NDS: ela se aproxima quando a
+ * batalha comeca e da um empurrao curto a cada golpe que acerta. Como o mundo
+ * e montado em tres dimensoes de verdade, basta mexer a camera -- o chao e as
+ * plataformas se reorganizam sozinhos.
+ */
+export async function playFieldIntro(
+  world: HTMLElement | null,
+  options: AnimationOptions,
+): Promise<void> {
+  if (!world || !options.enabled || reduceMotion()) return;
+  await animate(
+    world,
+    [
+      { transform: 'translateZ(-220px) translateY(30px) rotateX(7deg)' },
+      { transform: 'translateZ(10px) translateY(-2px) rotateX(-0.5deg)', offset: 0.78 },
+      { transform: 'translateZ(0) translateY(0) rotateX(0deg)' },
+    ],
+    780 / options.speed,
+  );
+}
+
+/** Empurrao curto da camera, para o golpe ter peso. */
+export function pushCamera(world: HTMLElement | null, options: AnimationOptions): void {
+  if (!world || !options.enabled || reduceMotion()) return;
+  void animate(
+    world,
+    [
+      { transform: 'translateZ(0)' },
+      { transform: 'translateZ(28px)', offset: 0.4 },
+      { transform: 'translateZ(0)' },
+    ],
+    420 / options.speed,
+  );
+}
+
+/**
  * Entrada em campo. O Pokemon do jogador e o do treinador saem de uma bola
  * arremessada; o selvagem simplesmente aparece, vindo da borda.
  */

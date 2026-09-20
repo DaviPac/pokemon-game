@@ -652,44 +652,190 @@ select {
   padding-top: var(--safe-top);
 }
 
-.battle-bg {
+/* --- Campo de batalha em tres dimensoes --------------------------------- */
+
+.field {
   position: absolute;
   inset: 0;
+  overflow: hidden;
+  /* Camera baixa, olhando o campo de cima: e o enquadramento dos jogos de NDS. */
+  perspective: 560px;
+  perspective-origin: 50% 30%;
+}
+
+.field-world {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  /* A camera se aproxima na abertura e da um empurrao nos golpes fortes. */
+  transform: translateZ(0);
+}
+
+.field-sky {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(to bottom, #7dc8f7 0%, #a9dcf7 42%, #cfeacb 62%, #9fd6a6 100%);
+}
+
+/* Vulto do que fica longe, atras do horizonte: da fundo a cena sem roubar a
+   atencao dos Pokemon. */
+.field-scenery {
+  position: absolute;
+  left: -6%;
+  right: -6%;
+  top: 30%;
+  height: 13%;
   background:
-    radial-gradient(120% 70% at 50% 8%, #7fc7ff 0%, #5aa7e8 38%, transparent 70%),
-    linear-gradient(to bottom, #6fbcf0 0%, #8fd6a0 52%, #64b874 100%);
+    radial-gradient(34% 120% at 16% 108%, #3f8a57 0 70%, transparent 74%),
+    radial-gradient(26% 96% at 38% 108%, #4d9a63 0 70%, transparent 74%),
+    radial-gradient(40% 128% at 66% 108%, #367b4d 0 70%, transparent 74%),
+    radial-gradient(28% 100% at 92% 108%, #45905a 0 70%, transparent 74%);
+  filter: blur(2px);
+  /* A base some dentro do chao, sem uma linha separando os dois. */
+  -webkit-mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+  mask-image: linear-gradient(to bottom, #000 62%, transparent 100%);
+}
+
+.field-water .field-scenery {
+  opacity: 0.25;
+}
+
+.field-cave .field-scenery {
+  background:
+    radial-gradient(40% 100% at 18% 100%, rgba(40, 35, 28, 0.9), transparent 70%),
+    radial-gradient(56% 90% at 52% 100%, rgba(48, 42, 33, 0.9), transparent 72%),
+    radial-gradient(44% 100% at 84% 100%, rgba(38, 33, 26, 0.9), transparent 70%);
+}
+
+/* Faixa de luz no horizonte: separa o chao do fundo sem uma linha dura. */
+.field-haze {
+  position: absolute;
+  left: -10%;
+  right: -10%;
+  top: 26%;
+  height: 26%;
+  background: radial-gradient(60% 100% at 50% 100%, rgba(255, 255, 255, 0.3), transparent 70%);
+  filter: blur(6px);
+}
+
+.field-floor {
+  position: absolute;
+  left: 50%;
+  top: 42%;
+  width: 320%;
+  height: 300%;
+  margin-left: -160%;
+  /* Gira a partir da propria borda de cima: e ela que vira o horizonte. */
+  transform-origin: 50% 0;
+  transform: rotateX(76deg);
+  background:
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.04) 0 54px, transparent 54px 130px),
+    repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.03) 0 54px, transparent 54px 130px),
+    radial-gradient(80% 60% at 50% 4%, #a6e0ac 0%, #6cbb7c 45%, #47935f 100%);
+  /* O chao desbota antes de encostar no horizonte. */
+  -webkit-mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 100%);
+  mask-image: linear-gradient(to bottom, transparent 0%, #000 12%, #000 100%);
+}
+
+/* As plataformas sao circulos deitados no mesmo plano do chao: quem faz delas
+   elipses e a perspectiva, nao um achatamento na mao. */
+/*
+ * As plataformas sao filhas do chao: ja nascem deitadas no plano dele, com a
+ * perspectiva certa e sem disputar o mesmo lugar no espaco. As medidas abaixo
+ * sao no sistema do chao -- quanto mais para cima, mais longe da camera --, e
+ * por isso a de tras e menor que a da frente aqui, embora as duas saiam do
+ * mesmo tamanho na tela.
+ */
+.field-platform {
+  position: absolute;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 50% 36%, rgba(255, 255, 255, 0.4), transparent 54%),
+    radial-gradient(circle at 50% 50%, #f0e2b4 0%, #d9c28a 40%, #b49a62 72%, #8a7345 100%);
+  box-shadow:
+    0 0 0 4px rgba(255, 255, 255, 0.12),
+    0 22px 38px rgba(0, 0, 0, 0.32),
+    inset 0 0 44px rgba(0, 0, 0, 0.16);
+}
+
+.field-platform-foe {
+  left: 55.4%;
+  top: 6.8%;
+  width: 9.1%;
+  aspect-ratio: 1;
+}
+
+.field-platform-player {
+  left: 47.3%;
+  top: 18%;
+  width: 7.7%;
+  aspect-ratio: 1;
 }
 
 /* O cenario acompanha onde o encontro aconteceu. */
-.battle-bg-water {
-  background:
-    radial-gradient(120% 70% at 50% 8%, #9fd8ff 0%, #4f93d8 40%, transparent 72%),
-    linear-gradient(to bottom, #5fa8e8 0%, #3f7fc0 55%, #2f5f98 100%);
+.field-water .field-sky {
+  background: linear-gradient(to bottom, #8fd0f7 0%, #7ab8ea 44%, #5f9fd8 64%, #3f79b8 100%);
 }
 
-.battle-bg-cave {
+.field-water .field-floor {
   background:
-    radial-gradient(120% 70% at 50% 6%, #5a5348 0%, #3b372f 42%, transparent 72%),
-    linear-gradient(to bottom, #4a453c 0%, #6b6252 55%, #574f42 100%);
+    repeating-linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.07) 0 40px,
+      transparent 40px 96px
+    ),
+    repeating-linear-gradient(0deg, rgba(255, 255, 255, 0.06) 0 24px, transparent 24px 70px),
+    radial-gradient(80% 60% at 50% 4%, #7fc4ef 0%, #4d8fd0 46%, #2f639f 100%);
 }
 
+.field-water .field-platform {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(255, 255, 255, 0.45), transparent 54%),
+    radial-gradient(circle at 50% 50%, #cdeeff 0%, #8ec8ef 42%, #5a9ad2 74%, #3b6ea8 100%);
+}
+
+.field-cave .field-sky {
+  background: linear-gradient(to bottom, #2b2721 0%, #3c362d 46%, #554c3f 70%, #6b6153 100%);
+}
+
+.field-cave .field-haze {
+  background: radial-gradient(60% 100% at 50% 100%, rgba(255, 220, 170, 0.18), transparent 70%);
+}
+
+.field-cave .field-floor {
+  background:
+    repeating-linear-gradient(90deg, rgba(0, 0, 0, 0.08) 0 52px, transparent 52px 104px),
+    repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.08) 0 52px, transparent 52px 104px),
+    radial-gradient(80% 60% at 50% 4%, #8a7b63 0%, #6b5f4c 46%, #4a4135 100%);
+}
+
+.field-cave .field-platform {
+  background:
+    radial-gradient(circle at 50% 36%, rgba(255, 255, 255, 0.22), transparent 54%),
+    radial-gradient(circle at 50% 50%, #b3a488 0%, #8d7d62 42%, #665a45 74%, #463d2e 100%);
+}
+
+/* A caixa de cada lado termina na linha do chao: e por ela que o Pokemon
+   aparece apoiado na plataforma, e nao flutuando por cima dela. */
 .battle-slot {
   position: absolute;
   display: grid;
-  place-items: center;
+  place-items: end center;
 }
 
 .battle-slot-foe {
-  top: 15%;
-  right: 9%;
-  width: 34%;
+  top: 22%;
+  right: 6%;
+  width: 40%;
+  height: 30%;
 }
 
 .battle-slot-player {
-  /* Acima do card de HP: os dois nunca se cobrem, mesmo num sprite grande. */
-  bottom: 20%;
-  left: 5%;
-  width: 42%;
+  top: 47%;
+  left: 2%;
+  width: 52%;
+  height: 38%;
 }
 
 .battle-sprite {
@@ -709,17 +855,23 @@ select {
   width: clamp(104px, 36vw, 178px);
 }
 
+/* A sombra e achatada como a plataforma: e o que prende o Pokemon ao chao. */
 .battle-shadow {
   position: absolute;
   /* Aparece junto com o sprite, na animacao de entrada. */
   opacity: 0;
   transition: opacity 0.2s ease;
-  bottom: -6px;
-  width: 62%;
-  height: 12px;
+  bottom: -4px;
+  width: 54%;
+  height: 16px;
   border-radius: 50%;
-  background: rgba(0, 0, 0, 0.2);
-  filter: blur(3px);
+  background: radial-gradient(circle, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0.16) 58%, transparent 72%);
+  filter: blur(2px);
+}
+
+.battle-slot-player .battle-shadow {
+  width: 62%;
+  height: 22px;
 }
 
 .battle-hud {

@@ -109,8 +109,10 @@ a tela do Pokemon capturado com o tema tocando, que a musica do lugar volta ao
 chegar no mapa (e que a de batalha nao sobra tocando), que perder leva de volta
 ao Centro Pokemon, que sair do app cala o som, que a barra inferior nao cobre
 botao nenhum, que correr usa o sprite de corrida, que a barra inferior cresce
-sob o dedo e se recolhe ao andar, e que numa tela de densidade quebrada o mapa
-sai pixel a pixel, sem costura entre os tiles.
+sob o dedo e se recolhe ao andar, que as plataformas do campo de batalha saem em
+perspectiva de verdade (a da frente mais aberta que a do fundo, cada Pokemon
+pisando no meio da sua) e que numa tela de densidade quebrada o mapa sai pixel a
+pixel, sem costura entre os tiles.
 
 `npm run test:update` verifica isso de ponta a ponta num navegador de verdade:
 instala uma versao, cria um save, publica outra por cima, confere que o aviso

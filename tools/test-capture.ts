@@ -1,7 +1,7 @@
 /**
  * Confere o fim de batalha e o que ele deixa para tras: a musica certa tocando,
- * a tela da captura, a barra inferior fora do caminho dos botoes e o sprite de
- * corrida.
+ * o campo em perspectiva, a tela da captura, a barra inferior fora do caminho
+ * dos botoes e o sprite de corrida.
  *
  * Usa os ganchos `window.__overworld`, `__game` e `__audio`, que so existem em
  * desenvolvimento -- entao aponte para o servidor `npm run dev`.
@@ -95,6 +95,43 @@ async function main(): Promise<void> {
 
     await page.waitForTimeout(3200);
     check('tema de batalha tocando', (await playing())?.startsWith('mus_vs') === true, `${await playing()}`);
+
+    // O campo e 3D de verdade: as plataformas sao circulos deitados, entao a
+    // da frente aparece mais aberta que a de tras, e cada Pokemon pisa no meio
+    // da sua. Um achatamento fixo daria a mesma proporcao para as duas.
+    const field = (await page.evaluate(`(() => {
+      const foe = document.querySelector('.field-platform-foe');
+      const player = document.querySelector('.field-platform-player');
+      const foeSprite = document.querySelector('.battle-sprite-foe');
+      const playerSprite = document.querySelector('.battle-sprite-player');
+      if (!foe || !player || !foeSprite || !playerSprite) return null;
+      const f = foe.getBoundingClientRect();
+      const p = player.getBoundingClientRect();
+      const fs = foeSprite.getBoundingClientRect();
+      const ps = playerSprite.getBoundingClientRect();
+      return {
+        foeRatio: f.height / f.width,
+        playerRatio: p.height / p.width,
+        foeGap: Math.abs(fs.bottom - (f.top + f.height / 2)),
+        playerGap: Math.abs(ps.bottom - (p.top + p.height / 2)),
+      };
+    })()`)) as {
+      foeRatio: number;
+      playerRatio: number;
+      foeGap: number;
+      playerGap: number;
+    } | null;
+    check(
+      'plataformas em perspectiva, a da frente mais aberta',
+      field !== null && field.foeRatio < field.playerRatio && field.foeRatio < 0.6,
+      field ? `fundo=${field.foeRatio.toFixed(2)} frente=${field.playerRatio.toFixed(2)}` : 'sem campo',
+    );
+    check(
+      'cada Pokemon pisa no meio da sua plataforma',
+      field !== null && field.foeGap < 26 && field.playerGap < 26,
+      field ? `fundo=${field.foeGap.toFixed(0)}px frente=${field.playerGap.toFixed(0)}px` : '',
+    );
+    await shot('10-campo-3d');
 
     await page.locator('.action-bag').click();
     await page.waitForTimeout(500);
