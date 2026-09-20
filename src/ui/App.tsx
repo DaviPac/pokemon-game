@@ -14,6 +14,7 @@ import {
   type Interaction,
 } from '../game/world/interactions.js';
 import type { PlayerPosition } from '../game/world/overworld.js';
+import { audio } from '../game/audio/index.js';
 import { shinyChanceFor, useGame } from '../state/game.js';
 import { haptic } from '../state/settings.js';
 import { BattleScreen } from './battle/BattleScreen.js';
@@ -25,8 +26,12 @@ import { Profile } from './screens/Profile.js';
 import { SettingsSheet } from './screens/SettingsSheet.js';
 import { Shop } from './screens/Shop.js';
 import { Team } from './screens/Team.js';
+import { TitleScreen } from './screens/TitleScreen.js';
 import { BottomNav, type Tab } from './shell/BottomNav.js';
 import { Dialogue } from './shell/Dialogue.js';
+
+/** Por onde o jogo esta passando: menu, abertura ou jogando. */
+type Stage = 'title' | 'intro' | 'playing';
 
 interface PendingBattle {
   battle: Battle;
@@ -37,6 +42,9 @@ interface PendingBattle {
 
 export function App() {
   const { ctx, chart, save, loading, boot } = useGame();
+  const [stage, setStage] = useState<Stage>('title');
+  /** Clarao curto ao entrar no mapa, para a abertura nao terminar num corte. */
+  const [arriving, setArriving] = useState(false);
   const [tab, setTab] = useState<Tab>('map');
   const [dialogue, setDialogue] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -107,10 +115,12 @@ export function App() {
       case 'heal':
         state.healParty();
         haptic([14, 60, 14]);
+        void audio.playJingle('mus_heal');
         setDialogue('Sua equipe foi tratada e esta em plena forma. Ate a proxima!');
         break;
 
       case 'shop':
+        audio.sfx('menu');
         setShopOpen(true);
         break;
 
@@ -242,8 +252,34 @@ export function App() {
     return <div className="boot-screen">Carregando…</div>;
   }
 
+  const enterMap = () => {
+    setStage('playing');
+    setArriving(true);
+    setTimeout(() => setArriving(false), 700);
+  };
+
+  if (stage === 'title') {
+    return (
+      <>
+        <TitleScreen
+          save={save}
+          onContinue={enterMap}
+          onNewGame={() => setStage('intro')}
+          onSettings={() => setSettingsOpen(true)}
+        />
+        {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
+      </>
+    );
+  }
+
+  if (stage === 'intro') {
+    return <NewGame ctx={ctx} onCancel={() => setStage('title')} onStarted={enterMap} />;
+  }
+
   if (!save) {
-    return <NewGame ctx={ctx} />;
+    // Sem save mas fora da abertura: volta ao menu em vez de travar.
+    setStage('title');
+    return <div className="boot-screen">Carregando…</div>;
   }
 
   const overlayOpen = dialogue !== null || settingsOpen || shopOpen || tab !== 'map';
@@ -289,6 +325,8 @@ export function App() {
       )}
 
       {!battle && <BottomNav active={tab} onChange={setTab} badge={questBadge} />}
+
+      {arriving && <div className="map-arrival" />}
 
       {dialogue && (
         <Dialogue

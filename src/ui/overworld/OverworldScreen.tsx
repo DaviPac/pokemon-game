@@ -11,6 +11,7 @@ import { resolveInteraction, type EventsFile, type Interaction } from '../../gam
 import { findPath } from '../../game/world/pathfinding.js';
 import { TILE, World, directionDelta } from '../../game/world/world.js';
 import { RNG } from '../../game/core/rng.js';
+import { audio, songForMap } from '../../game/audio/index.js';
 import { haptic, useSettings } from '../../state/settings.js';
 import { Controls, DPad } from './Controls.js';
 import { GbcScreen } from './GbcScreen.js';
@@ -89,15 +90,18 @@ export function OverworldScreen({
         },
         onMapChange: (map) => {
           setMapName(mapDisplayName(map));
+          void audio.playMusic(songForMap(map));
           refreshSprites();
           callbacks.current.onPosition(overworld.position());
         },
+        onBump: () => audio.sfx('bump'),
         onStep: (steps) => {
           callbacks.current.onStep(steps);
           // Guardar a posicao a cada passo seria exagero; de dez em dez basta.
           if (steps % 10 === 0) callbacks.current.onPosition(overworld.position());
         },
         onWarp: (dest, warpId) => {
+          audio.sfx('warp');
           void enterWarp(overworld, dest, warpId, setFading, () => {
             setMapName(mapDisplayName(overworld.world.map));
             refreshSprites();
@@ -111,6 +115,7 @@ export function OverworldScreen({
         ...overworld.npcs.map((n) => n.data.gfx),
       ]);
 
+      void audio.playMusic(songForMap(world.map));
       overworldRef.current = overworld;
       // Em desenvolvimento, os scripts de teste usam isto para posicionar o
       // jogador sem depender de segurar setas por um tempo exato.
@@ -171,6 +176,7 @@ export function OverworldScreen({
           if (interaction) {
             faceNpc(overworld, interaction);
             haptic(12);
+            audio.sfx(interaction.kind === 'trainer' ? 'menu' : 'select');
             callbacks.current.onInteract(interaction);
           }
         }

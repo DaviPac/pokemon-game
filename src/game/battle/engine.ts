@@ -14,6 +14,7 @@ import {
   evolutionAt,
   expGained,
   expForLevel,
+  expProgress,
   isFainted,
   makeMoveSlot,
   maxHp,
@@ -54,14 +55,15 @@ const STATUS_LABEL: Record<StatusName, string> = {
   tox: 'foi gravemente envenenado',
 };
 
-const STAT_LABEL: Record<string, string> = {
-  atk: 'Ataque',
-  def: 'Defesa',
-  spa: 'Ataque Especial',
-  spd: 'Defesa Especial',
-  spe: 'Velocidade',
-  accuracy: 'Precisao',
-  evasion: 'Evasao',
+/** Nome do atributo e o artigo que combina com ele, para o texto sair certo. */
+const STAT_LABEL: Record<string, { name: string; article: 'o' | 'a' }> = {
+  atk: { name: 'Ataque', article: 'o' },
+  def: { name: 'Defesa', article: 'a' },
+  spa: { name: 'Ataque Especial', article: 'o' },
+  spd: { name: 'Defesa Especial', article: 'a' },
+  spe: { name: 'Velocidade', article: 'a' },
+  accuracy: { name: 'Precisao', article: 'a' },
+  evasion: { name: 'Evasao', article: 'a' },
 };
 
 export interface BattleItemUse {
@@ -136,6 +138,21 @@ export class Battle {
     return side === 'player' ? 'foe' : 'player';
   }
 
+  /** Evento de entrada em campo, ja com o estado daquele instante. */
+  private sendOutEvent(side: Side, index: number): BattleEvent {
+    const pokemon = this.team(side).party[index];
+    return {
+      t: 'sendOut',
+      side,
+      index,
+      hp: pokemon.hp,
+      maxHp: maxHp(this.ctx, pokemon),
+      status: pokemon.status,
+      entrance:
+        side === 'player' ? 'player' : this.config.kind === 'trainer' ? 'trainer' : 'wild',
+    };
+  }
+
   /** Devolve e limpa os eventos acumulados. */
   drain(): BattleEvent[] {
     const events = this.events;
@@ -148,13 +165,14 @@ export class Battle {
     const foe = this.active('foe');
     if (this.config.kind === 'wild') {
       this.text(`Um ${displayName(this.ctx, foe)} selvagem apareceu!`);
+      this.push(this.sendOutEvent('foe', this.foe.activeIndex));
     } else {
       this.text(`${this.config.foeName ?? 'Treinador'} quer batalhar!`);
-      this.push({ t: 'sendOut', side: 'foe', index: this.foe.activeIndex });
       this.text(`${this.config.foeName ?? 'Treinador'} enviou ${displayName(this.ctx, foe)}!`);
+      this.push(this.sendOutEvent('foe', this.foe.activeIndex));
     }
-    this.push({ t: 'sendOut', side: 'player', index: this.player.activeIndex });
     this.text(`Vai, ${displayName(this.ctx, this.active('player'))}!`);
+    this.push(this.sendOutEvent('player', this.player.activeIndex));
     this.onSendOut('foe');
     this.onSendOut('player');
     return this.drain();
@@ -241,8 +259,8 @@ export class Battle {
     team.activeIndex = index;
     team.state = freshActiveState();
     this.participants.add(team.party[index].uid);
-    this.push({ t: 'sendOut', side: 'player', index });
     this.text(`Vai, ${displayName(this.ctx, team.party[index])}!`);
+    this.push(this.sendOutEvent('player', index));
     this.onSendOut('player');
     this.awaitingSwitch = false;
     return this.drain();
@@ -312,8 +330,8 @@ export class Battle {
     team.activeIndex = index;
     team.state = freshActiveState();
     this.participants.add(team.party[index].uid);
-    this.push({ t: 'sendOut', side, index });
     this.text(`Vai, ${displayName(this.ctx, team.party[index])}!`);
+    this.push(this.sendOutEvent(side, index));
     this.onSendOut(side);
   }
 
@@ -399,8 +417,9 @@ export class Battle {
 
     slot.pp--;
     state.lastMove = slot.id;
-    this.push({ t: 'useMove', side, move: slot.id });
+    // O texto vem antes da animacao: primeiro se le o que aconteceu, depois se ve.
     this.text(`${displayName(this.ctx, attacker)} usou ${move.n}!`);
+    this.push({ t: 'useMove', side, move: slot.id });
 
     // Protect e o unico "estado de barreira" que implementamos.
     if (move.volatile === 'protect' && move.target === 'self') {
@@ -502,8 +521,8 @@ export class Battle {
     const defenderSide = this.other(side);
     const defender = this.active(defenderSide);
     if (!this.canAct(side)) return;
-    this.push({ t: 'useMove', side, move: 'struggle' });
     this.text(`${displayName(this.ctx, attacker)} usou Struggle!`);
+    this.push({ t: 'useMove', side, move: 'struggle' });
     const damage = Math.max(1, Math.floor(maxHp(this.ctx, defender) / 4));
     defender.hp = Math.max(0, defender.hp - damage);
     this.push({
@@ -635,19 +654,21 @@ export class Battle {
     const key = stat as keyof ActiveState['boosts'];
     const before = state.boosts[key];
     const after = clampStage(before + delta);
+    const label = STAT_LABEL[stat] ?? { name: stat, article: 'o' as const };
+    const name = displayName(this.ctx, this.active(side));
+
     if (before === after) {
       this.text(
-        `${displayName(this.ctx, this.active(side))} nao pode ${delta > 0 ? 'aumentar' : 'reduzir'} mais o ${STAT_LABEL[stat]}!`,
+        `${name} nao pode ${delta > 0 ? 'aumentar' : 'reduzir'} mais ${label.article} ${label.name}!`,
       );
       return false;
     }
+
     state.boosts[key] = after;
     this.push({ t: 'boost', side, stat, delta: after - before });
-    const label = STAT_LABEL[stat] ?? stat;
+    const verb = delta > 0 ? 'aumentou' : 'reduziu';
     const magnitude = Math.abs(delta) >= 2 ? 'muito ' : '';
-    this.text(
-      `${displayName(this.ctx, this.active(side))} ${delta > 0 ? `aumentou ${magnitude}o` : `reduziu ${magnitude}o`} ${label}!`,
-    );
+    this.text(`${name} ${verb} ${magnitude}${label.article} ${label.name}!`);
     return true;
   }
 
@@ -860,10 +881,10 @@ export class Battle {
         }
         this.foe.activeIndex = next;
         this.foe.state = freshActiveState();
-        this.push({ t: 'sendOut', side: 'foe', index: next });
         this.text(
           `${this.config.foeName ?? 'O oponente'} enviou ${displayName(this.ctx, this.active('foe'))}!`,
         );
+        this.push(this.sendOutEvent('foe', next));
         this.onSendOut('foe');
       } else {
         const next = firstHealthy(this.player.party);
@@ -916,7 +937,16 @@ export class Battle {
         }
       }
 
-      this.push({ t: 'exp', uid: pokemon.uid, gained, level: pokemon.level, leveledUp });
+      this.push({
+        t: 'exp',
+        uid: pokemon.uid,
+        gained,
+        level: pokemon.level,
+        leveledUp,
+        progress: expProgress(this.ctx, pokemon),
+        hp: pokemon.hp,
+        maxHp: maxHp(this.ctx, pokemon),
+      });
     }
 
     // Distribuicao de EVs de quem participou.

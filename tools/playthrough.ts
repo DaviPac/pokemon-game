@@ -57,78 +57,105 @@ async function main(): Promise<void> {
     console.log(`  ${name}.png`);
   };
 
-  // --- Novo jogo ------------------------------------------------------------
+  // --- Menu inicial e abertura ----------------------------------------------
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(1600);
-  await shot('01-novo-jogo');
+  await page.waitForTimeout(1800);
+  await shot('01-menu-inicial');
+
+  await page.locator('.title-action').first().click();
+  await page.waitForTimeout(1200);
+  await shot('02-oak');
+
+  // As falas do Oak avancam com um toque cada.
+  for (let i = 0; i < 6; i++) {
+    await page.locator('.intro-scene').click().catch(() => undefined);
+    await page.waitForTimeout(380);
+  }
+  await shot('03-nome');
 
   await page.fill('#trainer-name', 'Davi');
-  await page.click('.starter-card:nth-child(2)');
+  await page.locator('.primary-button').click();
+  await page.waitForTimeout(700);
+  await shot('04-escolha-inicial');
+
+  await page.locator('.starter-card').nth(1).click();
   await page.waitForTimeout(400);
-  await shot('02-inicial');
-  await page.click('.primary-button');
-  await page.waitForTimeout(3000);
-  await shot('03-pallet-town');
+  await page.locator('.primary-button').click();
+  await page.waitForTimeout(800);
+  await shot('05-despedida');
+
+  for (let i = 0; i < 4; i++) {
+    await page.locator('.intro-scene').click().catch(() => undefined);
+    await page.waitForTimeout(520);
+  }
+  await page.waitForTimeout(2600);
+  await shot('06-pallet-town');
 
   // --- Entrar em casa e falar com a mae -------------------------------------
   await hold(page, 'ArrowUp', 400);
   await page.waitForTimeout(1800);
-  await shot('04-interior');
+  await shot('07-interior');
 
   await place(page, 8, 5, 'up');
   await page.keyboard.press('z');
   await page.waitForTimeout(1500);
-  await shot('05-dialogo');
+  await shot('08-dialogo');
   await dismissDialogue(page);
 
   // --- Encontro selvagem na grama da Rota 1 ---------------------------------
   await teleport(page, 'MAP_ROUTE1', 12, 20);
   await page.waitForTimeout(2600);
-  await shot('06-rota-1');
+  await shot('09-rota-1');
 
   if (await walkUntilBattle(page, 40)) {
-    await page.waitForTimeout(2400);
-    await shot('07-encontro');
+    await page.waitForTimeout(3200);
+    await shot('10-encontro');
 
     await clickIfPresent(page, '.action-fight');
     await page.waitForTimeout(600);
-    await shot('08-golpes');
+    await shot('11-golpes');
     await clickIfPresent(page, '.move-button');
     await page.waitForTimeout(3400);
-    await shot('09-golpe-aplicado');
+    await shot('12-golpe-aplicado');
 
     await clickIfPresent(page, '.action-bag');
     await page.waitForTimeout(600);
     await clickIfPresent(page, '.bag-item');
     await page.waitForTimeout(6000);
-    await shot('10-pokebola');
+    await shot('13-pokebola');
   } else {
     console.log('  (nenhum encontro nas tentativas)');
   }
 
   // --- Batalha de ginasio ---------------------------------------------------
+  // Sai da batalha selvagem antes: com ela aberta, trocar de mapa nao muda a tela.
+  await leaveBattle(page);
   await dismissDialogue(page);
   await teleport(page, 'MAP_PEWTER_CITY_GYM', 5, 12);
   await page.waitForTimeout(2600);
-  await shot('11-ginasio');
+  await shot('14-ginasio');
 
   if (await faceNpcWithScript(page, 'Brock')) {
     await page.keyboard.press('z');
-    await page.waitForTimeout(3200);
-    await shot('12-batalha-brock');
+    await page.waitForTimeout(4200);
+    await shot('15-batalha-brock');
   } else {
     console.log('  (Brock nao encontrado no ginasio)');
   }
 
   // --- Abas do app ----------------------------------------------------------
   await page.goto(url, { waitUntil: 'networkidle' });
-  await page.waitForTimeout(2400);
+  await page.waitForTimeout(2000);
+  await shot('16-menu-com-save');
+  await page.locator('.title-continue').click();
+  await page.waitForTimeout(2600);
+
   for (const [index, tab] of ['Pokedex', 'Equipe', 'Mochila', 'Perfil'].entries()) {
     const button = page.locator('.nav-item', { hasText: tab }).first();
     if (await button.count()) {
       await button.click();
       await page.waitForTimeout(1200);
-      await shot(`1${index + 3}-${tab.toLowerCase()}`);
+      await shot(`1${index + 7}-${tab.toLowerCase()}`);
     }
   }
 
@@ -136,14 +163,15 @@ async function main(): Promise<void> {
   if (await addExpedition.count()) {
     await addExpedition.click();
     await page.waitForTimeout(1200);
-    await shot('17-expedicao');
+    await shot('22-expedicao');
   }
 
   // --- Modos de locomocao ---------------------------------------------------
   for (const [index, mode] of ['legacy-dpad', 'legacy-stick', 'oldschool-dual', 'touch'].entries()) {
     await setMovementMode(page, mode);
-    await page.waitForTimeout(2200);
-    await shot(`2${index}-modo-${mode}`);
+    await page.locator('.title-continue').click().catch(() => undefined);
+    await page.waitForTimeout(2400);
+    await shot(`3${index}-modo-${mode}`);
   }
   await setMovementMode(page, 'new');
 
@@ -215,6 +243,16 @@ async function walkUntilBattle(page: Page, attempts: number): Promise<boolean> {
     if (await page.locator('.battle').count()) return true;
   }
   return false;
+}
+
+/** Foge da batalha em andamento, se houver, e espera voltar ao mapa. */
+async function leaveBattle(page: Page): Promise<void> {
+  for (let i = 0; i < 6; i++) {
+    if (!(await page.locator('.battle').count())) return;
+    await clickIfPresent(page, '.action-run');
+    await page.waitForTimeout(1800);
+    await dismissDialogue(page);
+  }
 }
 
 async function dismissDialogue(page: Page): Promise<void> {

@@ -38,10 +38,34 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
   const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
   const [knob, setKnob] = useState<{ x: number; y: number } | null>(null);
   const pointerId = useRef<number | null>(null);
+  // Um toque que nao vira arrasto e uma interacao, nao um passo.
+  const pressStart = useRef(0);
+  const moved = useRef(false);
+  const holdTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const DEADZONE = 14;
   const RUN_DISTANCE = 46;
   const MAX_DRIFT = 58;
+  /** Abaixo disto, soltar o dedo conta como toque e nao como arrasto. */
+  const TAP_MS = 260;
+  /** Segurar parado tambem interage, para quem prefere manter o dedo na tela. */
+  const HOLD_MS = 420;
+
+  const clearHold = () => {
+    if (holdTimer.current) clearTimeout(holdTimer.current);
+    holdTimer.current = null;
+  };
+
+  const release = () => {
+    clearHold();
+    pointerId.current = null;
+    setOrigin(null);
+    setKnob(null);
+    bus.dir = null;
+    bus.running = false;
+  };
+
+  useEffect(() => clearHold, []);
 
   return (
     <div
@@ -52,6 +76,16 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
         setOrigin({ x: e.clientX, y: e.clientY });
         setKnob({ x: e.clientX, y: e.clientY });
+        pressStart.current = performance.now();
+        moved.current = false;
+
+        clearHold();
+        holdTimer.current = setTimeout(() => {
+          if (moved.current) return;
+          bus.press('a');
+          haptic(14);
+          moved.current = true; // ja interagiu: soltar nao repete
+        }, HOLD_MS);
       }}
       onPointerMove={(e) => {
         if (pointerId.current !== e.pointerId || !origin) return;
@@ -71,25 +105,24 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
 
         setKnob({ x: e.clientX, y: e.clientY });
         const dir = vectorToDirection(dx, dy, DEADZONE);
+        if (dir) {
+          moved.current = true;
+          clearHold();
+        }
         if (dir !== bus.dir && dir !== null) haptic(6);
         bus.dir = dir;
         bus.running = Math.hypot(dx, dy) > RUN_DISTANCE;
       }}
       onPointerUp={(e) => {
         if (pointerId.current !== e.pointerId) return;
-        pointerId.current = null;
-        setOrigin(null);
-        setKnob(null);
-        bus.dir = null;
-        bus.running = false;
+        const quick = performance.now() - pressStart.current < TAP_MS;
+        if (quick && !moved.current) {
+          bus.press('a');
+          haptic(12);
+        }
+        release();
       }}
-      onPointerCancel={() => {
-        pointerId.current = null;
-        setOrigin(null);
-        setKnob(null);
-        bus.dir = null;
-        bus.running = false;
-      }}
+      onPointerCancel={release}
     >
       {origin && knob && (
         // Um rastro discreto so para confirmar o toque; some ao soltar.

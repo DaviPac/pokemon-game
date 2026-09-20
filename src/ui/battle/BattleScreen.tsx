@@ -16,9 +16,18 @@ import {
   type PokemonContext,
 } from '../../game/pokemon/pokemon.js';
 import { battleSprite } from '../../game/pokemon/sprites.js';
+import { audio } from '../../game/audio/index.js';
 import { haptic, useSettings } from '../../state/settings.js';
 import { CATEGORY_LABELS, TYPE_COLORS, TYPE_NAMES_PT } from '../theme/types.js';
-import { playBall, playFaint, playHit, playMove, playSendOut, wait } from './animations.js';
+import {
+  playBall,
+  playBattleIntro,
+  playEntrance,
+  playFaint,
+  playHit,
+  playMove,
+  wait,
+} from './animations.js';
 import { HPBar } from './HPBar.js';
 
 type Menu = 'main' | 'moves' | 'bag' | 'party' | 'none';
@@ -68,13 +77,22 @@ export function BattleScreen({
   const [player, setPlayer] = useState<SideView>(() => viewOf(ctx, battle.active('player'), true));
   const [foe, setFoe] = useState<SideView>(() => viewOf(ctx, battle.active('foe'), false));
   const [finished, setFinished] = useState<BattleOutcome | null>(null);
-
-  const refresh = useCallback(() => {
-    setPlayer(viewOf(ctx, battle.active('player'), true));
-    setFoe(viewOf(ctx, battle.active('foe'), false));
-  }, [battle, ctx]);
+  const [activeSlot, setActiveSlot] = useState(battle.player.activeIndex);
+  // Quem ja caiu na animacao; os pontinhos da equipe seguem isto, nao o motor.
+  const [faintedUids, setFaintedUids] = useState<string[]>([]);
 
   const spriteRef = (side: Side) => (side === 'player' ? playerSpriteRef : foeSpriteRef);
+
+  /**
+   * O HUD segue os eventos, nao o motor: quando o turno chega aqui ele ja foi
+   * resolvido inteiro, entao ler o motor faria a barra de HP cair antes mesmo
+   * de o golpe aparecer na tela.
+   */
+  const patch = useCallback((side: Side, changes: Partial<SideView>) => {
+    const apply = (view: SideView) => ({ ...view, ...changes });
+    if (side === 'player') setPlayer(apply);
+    else setFoe(apply);
+  }, []);
 
   const play = useCallback(
     async (events: BattleEvent[]) => {
@@ -89,9 +107,26 @@ export function BattleScreen({
             break;
 
           case 'sendOut': {
-            refresh();
+            const pokemon = battle.team(event.side).party[event.index];
+            if (event.side === 'player') setActiveSlot(event.index);
+            const view = viewOf(ctx, pokemon, event.side === 'player');
+            // Identidade vem do Pokemon; HP e status, do instante do evento.
+            if (event.side === 'player') {
+              setPlayer({ ...view, hp: event.hp, maxHp: event.maxHp, status: event.status });
+            } else {
+              setFoe({ ...view, hp: event.hp, maxHp: event.maxHp, status: event.status });
+            }
             await wait(60);
-            await playSendOut(spriteRef(event.side).current, animOptions);
+            if (event.entrance !== 'wild') audio.sfx('ball');
+            await playEntrance(
+              spriteRef(event.side).current,
+              stageRef.current,
+              event.entrance,
+              animOptions,
+            );
+            // O grito sai quando o Pokemon aparece, como nos jogos.
+            audio.cry(pokemon.species);
+            await wait(180 / animOptions.speed);
             break;
           }
 
@@ -121,29 +156,49 @@ export function BattleScreen({
               animOptions,
             );
             if (event.side === 'player') haptic(event.effectiveness === 'super' ? [22, 30, 22] : 14);
-            refresh();
+            audio.sfx(
+              event.effectiveness === 'super'
+                ? 'super'
+                : event.effectiveness === 'resisted'
+                  ? 'weak'
+                  : 'hit',
+            );
+            patch(event.side, { hp: event.hp, maxHp: event.maxHp });
             await wait(200 / animOptions.speed);
             break;
           }
 
           case 'heal':
-          case 'status':
-          case 'boost':
-            refresh();
+            patch(event.side, { hp: event.hp, maxHp: event.maxHp });
             await wait(200 / animOptions.speed);
+            break;
+
+          case 'status':
+            patch(event.side, { status: event.status });
+            await wait(200 / animOptions.speed);
+            break;
+
+          case 'boost':
+            await wait(160 / animOptions.speed);
             break;
 
           case 'miss':
             await wait(200 / animOptions.speed);
             break;
 
-          case 'faint':
+          case 'faint': {
+            const fallen = battle.active(event.side);
+            audio.sfx('faint');
             await playFaint(spriteRef(event.side).current, animOptions);
+            patch(event.side, { hp: 0 });
+            setFaintedUids((current) => [...current, fallen.uid]);
             await wait(240 / animOptions.speed);
             break;
+          }
 
           case 'ball':
             haptic([14, 60, 14]);
+            audio.sfx('ball');
             await playBall(
               stageRef.current,
               foeSpriteRef.current,
@@ -155,11 +210,21 @@ export function BattleScreen({
 
           case 'caught':
             haptic([30, 60, 30, 60, 60]);
-            await wait(320 / animOptions.speed);
+            void audio.playJingle('mus_caught');
+            await wait(900 / animOptions.speed);
             break;
 
           case 'exp':
-            refresh();
+            if (event.leveledUp) void audio.playJingle('mus_level_up');
+            // So a barra do Pokemon que esta em campo muda na tela.
+            if (battle.active('player').uid === event.uid) {
+              patch('player', {
+                exp: event.progress,
+                level: event.level,
+                hp: event.hp,
+                maxHp: event.maxHp,
+              });
+            }
             await wait(260 / animOptions.speed);
             break;
 
@@ -169,6 +234,12 @@ export function BattleScreen({
             return;
 
           case 'end':
+            if (event.outcome === 'win') {
+              void audio.playMusic(
+                battle.config.kind === 'trainer' ? 'mus_victory_trainer' : 'mus_victory_wild',
+                { loop: false },
+              );
+            }
             setFinished(event.outcome);
             busyRef.current = false;
             await wait(600 / animOptions.speed);
@@ -180,16 +251,19 @@ export function BattleScreen({
         }
       }
 
-      refresh();
       busyRef.current = false;
       if (!battle.outcome) setMenu('main');
     },
-    [animOptions, battle, ctx, onFinish, refresh],
+    [animOptions, battle, ctx, onFinish, patch],
   );
 
-  // Abertura
+  // Abertura: a cortina varre a tela antes do primeiro texto.
   useEffect(() => {
-    void play(battle.start());
+    void (async () => {
+      void audio.playMusic(battleSong(battle.config.kind, battle.config.foeName));
+      await playBattleIntro(stageRef.current, animOptions);
+      await play(battle.start());
+    })();
     // Roda uma vez por batalha.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -267,7 +341,7 @@ export function BattleScreen({
           {battle.player.party.map((p, i) => (
             <span
               key={p.uid}
-              className={`party-dot ${isFainted(p) ? 'party-dot-out' : ''} ${i === battle.player.activeIndex ? 'party-dot-active' : ''}`}
+              className={`party-dot ${faintedUids.includes(p.uid) ? 'party-dot-out' : ''} ${i === activeSlot ? 'party-dot-active' : ''}`}
             />
           ))}
         </div>
@@ -278,13 +352,34 @@ export function BattleScreen({
 
         {menu === 'main' && (
           <div className="battle-actions">
-            <button type="button" className="battle-action action-fight" onClick={() => setMenu('moves')}>
+            <button
+              type="button"
+              className="battle-action action-fight"
+              onClick={() => {
+                audio.sfx('select');
+                setMenu('moves');
+              }}
+            >
               Lutar
             </button>
-            <button type="button" className="battle-action action-bag" onClick={() => setMenu('bag')}>
+            <button
+              type="button"
+              className="battle-action action-bag"
+              onClick={() => {
+                audio.sfx('select');
+                setMenu('bag');
+              }}
+            >
               Mochila
             </button>
-            <button type="button" className="battle-action action-party" onClick={() => setMenu('party')}>
+            <button
+              type="button"
+              className="battle-action action-party"
+              onClick={() => {
+                audio.sfx('select');
+                setMenu('party');
+              }}
+            >
               Pokemon
             </button>
             <button
@@ -416,6 +511,12 @@ export function BattleScreen({
       </span>
     </div>
   );
+}
+
+/** Lider de ginasio tem tema proprio; o resto segue selvagem ou treinador. */
+function battleSong(kind: 'wild' | 'trainer', foeName?: string): string {
+  if (kind === 'wild') return 'mus_vs_wild';
+  return /Lider|Elite|Campeao/i.test(foeName ?? '') ? 'mus_vs_gym_leader' : 'mus_vs_trainer';
 }
 
 function viewOf(ctx: PokemonContext, pokemon: Pokemon, isPlayer: boolean): SideView {

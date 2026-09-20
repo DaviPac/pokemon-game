@@ -2,6 +2,7 @@
  * Navegacao inferior com o botao central grande, no espirito do Pokemon GO:
  * o mapa e o centro do jogo, o resto orbita em volta.
  */
+import { audio } from '../../game/audio/index.js';
 import { haptic } from '../../state/settings.js';
 
 export type Tab = 'map' | 'pokedex' | 'team' | 'bag' | 'profile';
@@ -40,6 +41,7 @@ export function BottomNav({ active, onChange, badge }: Props) {
               .join(' ')}
             onClick={() => {
               haptic(8);
+              audio.sfx('click');
               onChange(item.id);
             }}
             aria-current={isActive ? 'page' : undefined}

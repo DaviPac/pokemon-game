@@ -22,6 +22,35 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         ))}
       </div>
 
+      <h3 className="section-title">Som</h3>
+      <Toggle
+        label="Silenciar tudo"
+        checked={settings.muted}
+        onChange={(v) => settings.set('muted', v)}
+      />
+      <label className="row">
+        <span>Musica</span>
+        <input
+          type="range"
+          className="slider"
+          min={0}
+          max={100}
+          value={Math.round(settings.musicVolume * 100)}
+          onChange={(e) => settings.set('musicVolume', Number(e.target.value) / 100)}
+        />
+      </label>
+      <label className="row">
+        <span>Efeitos</span>
+        <input
+          type="range"
+          className="slider"
+          min={0}
+          max={100}
+          value={Math.round(settings.sfxVolume * 100)}
+          onChange={(e) => settings.set('sfxVolume', Number(e.target.value) / 100)}
+        />
+      </label>
+
       <h3 className="section-title">Tela</h3>
       <label className="row">
         <span>Zoom do mapa</span>

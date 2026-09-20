@@ -11,6 +11,7 @@ const steps = [
   // Depende dos mapas ja convertidos e do species.json.
   'tools/build-events.ts',
   'tools/build-icons.ts',
+  'tools/build-music.ts',
 ];
 
 for (const step of steps) {

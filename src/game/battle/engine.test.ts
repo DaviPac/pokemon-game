@@ -209,6 +209,73 @@ describe('batalha', () => {
     expect(player.exp).toBeGreaterThan(before);
   });
 
+  it('a velocidade decide quem ataca primeiro', () => {
+    // Jolteon (129 de velocidade) contra Snorlax (42), os dois no nivel 50.
+    const jolteon = make(135, 50, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] });
+    const snorlax = make(143, 50, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] });
+
+    const order = (player: Pokemon, foe: Pokemon): string[] => {
+      const battle = new Battle(ctx, chart, new RNG(9), [player], [foe], {
+        kind: 'wild',
+        canRun: true,
+      });
+      battle.start();
+      return battle
+        .takeTurn({ kind: 'move', index: 0 })
+        .filter((e) => e.t === 'useMove')
+        .map((e) => (e.t === 'useMove' ? e.side : ''));
+    };
+
+    expect(order(clone(jolteon), clone(snorlax))[0]).toBe('player');
+    expect(order(clone(snorlax), clone(jolteon))[0]).toBe('foe');
+  });
+
+  it('prioridade do golpe passa na frente da velocidade', () => {
+    const jolteon = make(135, 50, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] });
+    const snorlax = make(143, 50, { moves: [{ id: 'quickattack', pp: 30, maxPp: 30 }] });
+    const battle = new Battle(ctx, chart, new RNG(9), [jolteon], [snorlax], {
+      kind: 'wild',
+      canRun: true,
+    });
+    battle.start();
+    const order = battle
+      .takeTurn({ kind: 'move', index: 0 })
+      .filter((e) => e.t === 'useMove')
+      .map((e) => (e.t === 'useMove' ? e.side : ''));
+    expect(order[0]).toBe('foe');
+  });
+
+  it('os eventos carregam o HP do instante em que aconteceram', () => {
+    // A interface anima o turno passo a passo: se o evento trouxesse o estado
+    // final, a barra de HP cairia antes de o golpe aparecer.
+    const player = make(6, 50, { moves: [{ id: 'ember', pp: 25, maxPp: 25 }] });
+    const foe = make(10, 8, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] });
+    const battle = new Battle(ctx, chart, new RNG(11), [player], [foe], {
+      kind: 'wild',
+      canRun: true,
+    });
+
+    const opening = battle.start();
+    const sendOut = opening.find((e) => e.t === 'sendOut' && e.side === 'foe');
+    expect(sendOut?.t === 'sendOut' && sendOut.hp).toBe(maxHp(ctx, foe));
+
+    const events = battle.takeTurn({ kind: 'move', index: 0 });
+    const damage = events.find((e) => e.t === 'damage' && e.side === 'foe');
+    expect(damage?.t === 'damage' && damage.hp).toBe(
+      Math.max(0, maxHp(ctx, foe) - (damage?.t === 'damage' ? damage.amount : 0)),
+    );
+  });
+
+  it('o texto do golpe vem antes da animacao', () => {
+    const battle = newBattle();
+    battle.start();
+    const events = battle.takeTurn({ kind: 'move', index: 0 });
+    const textIndex = events.findIndex((e) => e.t === 'text' && e.text.includes('usou'));
+    const moveIndex = events.findIndex((e) => e.t === 'useMove');
+    expect(textIndex).toBeGreaterThanOrEqual(0);
+    expect(textIndex).toBeLessThan(moveIndex);
+  });
+
   it('fugir de um treinador nao funciona', () => {
     const battle = new Battle(ctx, chart, new RNG(3), [make(6, 30)], [make(9, 30)], {
       kind: 'trainer',
@@ -221,6 +288,11 @@ describe('batalha', () => {
     expect(battle.outcome).toBeNull();
   });
 });
+
+/** Copia rasa o bastante para reusar um Pokemon em varias batalhas. */
+function clone(pokemon: Pokemon): Pokemon {
+  return { ...pokemon, moves: pokemon.moves.map((m) => ({ ...m })) };
+}
 
 function newBattle(): Battle {
   return new Battle(ctx, chart, new RNG(42), [make(1, 12), make(4, 12)], [make(16, 10)], {

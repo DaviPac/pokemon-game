@@ -47,7 +47,18 @@ export type Effectiveness = 'immune' | 'resisted' | 'normal' | 'super';
 
 export type BattleEvent =
   | { t: 'text'; text: string }
-  | { t: 'sendOut'; side: Side; index: number }
+  // Os eventos carregam o estado do momento em que aconteceram: a interface
+  // anima o turno passo a passo, e nao pode ler o motor (que ja resolveu tudo).
+  | {
+      t: 'sendOut';
+      side: Side;
+      index: number;
+      hp: number;
+      maxHp: number;
+      status: StatusName | null;
+      /** Modo de entrada: pela bola do jogador, do treinador, ou selvagem. */
+      entrance: 'player' | 'trainer' | 'wild';
+    }
   | { t: 'useMove'; side: Side; move: string }
   | { t: 'damage'; side: Side; amount: number; hp: number; maxHp: number; effectiveness: Effectiveness; crit: boolean }
   | { t: 'heal'; side: Side; amount: number; hp: number; maxHp: number }
@@ -57,7 +68,17 @@ export type BattleEvent =
   | { t: 'faint'; side: Side }
   | { t: 'ball'; shakes: number; caught: boolean; ball: string }
   | { t: 'caught'; species: number }
-  | { t: 'exp'; uid: string; gained: number; level: number; leveledUp: boolean }
+  | {
+      t: 'exp';
+      uid: string;
+      gained: number;
+      level: number;
+      leveledUp: boolean;
+      /** Progresso 0..1 dentro do nivel, para a barra de EXP. */
+      progress: number;
+      hp: number;
+      maxHp: number;
+    }
   | { t: 'learnMove'; uid: string; move: string }
   | { t: 'evolve'; uid: string; from: number; to: number }
   | { t: 'prompt'; kind: 'chooseSwitch' }

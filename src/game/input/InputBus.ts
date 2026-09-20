@@ -10,7 +10,7 @@ export const MOVEMENT_MODES: { id: MovementMode; label: string; hint: string }[]
   {
     id: 'new',
     label: 'Novo',
-    hint: 'Deslize o dedo em qualquer lugar da tela: o personagem vai para onde voce arrasta.',
+    hint: 'Deslize o dedo para andar. Um toque rapido, ou segurar parado, interage com o que esta na frente.',
   },
   {
     id: 'touch',
