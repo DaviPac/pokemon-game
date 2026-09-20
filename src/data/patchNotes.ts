@@ -17,6 +17,29 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.5.0',
+    date: '2026-09-20',
+    title: 'Kanto falando portugues',
+    changes: [
+      {
+        kind: 'novo',
+        text: 'As 1787 falas de Kanto foram traduzidas para portugues, uma a uma: os NPCs, os lideres de ginasio, as placas, os avisos e as dicas de treinador.',
+      },
+      {
+        kind: 'novo',
+        text: 'Cada golpe tem som proprio: a forma vem da categoria (o baque do fisico, o disparo do especial, o brilho do status) e a cor vem do tipo -- o fogo sopra, o eletrico zumbe, a pedra troveja.',
+      },
+      {
+        kind: 'correcao',
+        text: 'Um toque na fala agora completa o texto em vez de pular a fala; o toque seguinte, com o texto inteiro na tela, e que passa adiante. A setinha embaixo avisa a hora.',
+      },
+      {
+        kind: 'correcao',
+        text: 'No controle novo, o analogico ficou realmente invisivel: nao aparece mais o circulo de rastro sob o dedo.',
+      },
+    ],
+  },
+  {
     version: '0.4.1',
     date: '2026-09-20',
     title: 'Campo de batalha em tres dimensoes',

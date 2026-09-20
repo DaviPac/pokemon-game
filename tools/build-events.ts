@@ -12,6 +12,7 @@
 import { readFile, readdir, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
 import { fetchText, mapLimit } from './lib/net.js';
+import traducoes from './i18n/dialogue.pt.json' with { type: 'json' };
 
 const OUT_DATA = join(process.cwd(), 'public', 'assets', 'data');
 const MAPS_DIR = join(OUT_DATA, 'maps');
@@ -60,7 +61,7 @@ async function main(): Promise<void> {
       const strings = parseTexts(texts);
       for (const [label, textLabel] of parseScriptMessages(scripts)) {
         const text = strings.get(textLabel);
-        if (text) dialogue[label] = text;
+        if (text) dialogue[label] = translate(text);
       }
     }
   });
@@ -71,6 +72,11 @@ async function main(): Promise<void> {
   for (const id of used) {
     if (trainers[id]) filtered[id] = trainers[id];
   }
+
+  console.log(
+    `[eventos] falas em portugues: ${Object.keys(dialogue).length - semTraducao}/${Object.keys(dialogue).length}` +
+      (semTraducao > 0 ? ` (${semTraducao} ainda em ingles)` : ''),
+  );
 
   await writeFile(
     join(OUT_DATA, 'events.json'),
@@ -191,6 +197,21 @@ function parseTexts(text: string): Map<string, string> {
     if (joined) out.set(match[1], joined);
   }
   return out;
+}
+
+/**
+ * As falas do decomp estao em ingles. A traducao para portugues fica num mapa
+ * a parte (tools/i18n/dialogue.pt.json), feito a mao: o que nao estiver la
+ * continua como no original, e o build avisa quantas faltam.
+ */
+const PT: Record<string, string> = traducoes;
+let semTraducao = 0;
+
+function translate(text: string): string {
+  const pt = PT[text];
+  if (pt) return pt;
+  semTraducao++;
+  return text;
 }
 
 /**

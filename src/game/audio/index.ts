@@ -5,6 +5,8 @@
  * fica em espera ate o primeiro toque -- inclusive a musica pedida antes disso,
  * que comeca sozinha assim que o audio e liberado.
  */
+import type { MoveCategory, PokemonType } from '../data/types.js';
+import { playMoveSfx } from './moves.js';
 import { MusicPlayer, type MusicSong } from './music.js';
 import { playSfx, type SfxName } from './sfx.js';
 
@@ -116,6 +118,9 @@ class AudioEngine {
   get nowPlaying(): SongId | null {
     return this.currentSong;
   }
+
+  /** O ultimo golpe que saiu pelo alto-falante, no formato "Tipo/Categoria". */
+  lastMove: string | null = null;
 
   /** Estado do audio: 'running', 'suspended' ou 'off' antes do primeiro toque. */
   get state(): string {
@@ -230,6 +235,14 @@ class AudioEngine {
   sfx(name: SfxName): void {
     if (!this.context || !this.sfxGain || this.muted) return;
     playSfx(this.context, this.sfxGain, name);
+  }
+
+  /** Som do golpe: a forma vem da categoria, a cor vem do tipo. */
+  move(type: PokemonType, category: MoveCategory): void {
+    if (!this.context || !this.sfxGain || this.muted) return;
+    // Registrado para depuracao e para os testes de tela, que nao escutam.
+    this.lastMove = `${type}/${category}`;
+    playMoveSfx(this.context, this.sfxGain, type, category);
   }
 
   /** Grito do Pokemon, vindo do repositorio de audio do PokeAPI. */

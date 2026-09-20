@@ -1,8 +1,13 @@
 /**
  * Caixa de fala. Escreve letra a letra (o charme dos jogos originais), mas com
  * area de toque grande e fecha em qualquer lugar da tela.
+ *
+ * Um toque enquanto a fala esta sendo escrita completa ela na hora; o toque
+ * seguinte, com a fala ja inteira na tela, passa adiante. A setinha embaixo so
+ * aparece quando o texto acabou: e ela que avisa que o proximo toque avanca.
  */
 import { useEffect, useRef, useState } from 'react';
+import { audio } from '../../game/audio/index.js';
 
 interface Props {
   text: string;
@@ -16,29 +21,41 @@ const CHAR_MS = 18;
 export function Dialogue({ text: raw, playerName, onClose }: Props) {
   const text = playerName ? raw.replaceAll('{PLAYER}', playerName) : raw;
   const [shown, setShown] = useState('');
-  const doneRef = useRef(false);
+  const [done, setDone] = useState(false);
+  const timer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopTyping = () => {
+    if (timer.current) clearInterval(timer.current);
+    timer.current = null;
+  };
 
   useEffect(() => {
     setShown('');
-    doneRef.current = false;
+    setDone(false);
     let index = 0;
-    const timer = setInterval(() => {
+    stopTyping();
+    timer.current = setInterval(() => {
       index++;
       setShown(text.slice(0, index));
       if (index >= text.length) {
-        doneRef.current = true;
-        clearInterval(timer);
+        stopTyping();
+        setDone(true);
       }
     }, CHAR_MS);
-    return () => clearInterval(timer);
+    return stopTyping;
   }, [text]);
 
   const advance = () => {
-    if (doneRef.current) onClose();
-    else {
-      doneRef.current = true;
-      setShown(text);
+    if (done) {
+      audio.sfx('select');
+      onClose();
+      return;
     }
+    // Sem parar o relogio aqui, ele continuava escrevendo por cima e devolvia
+    // a fala pela metade -- era por isso que o toque parecia pular a fala.
+    stopTyping();
+    setShown(text);
+    setDone(true);
   };
 
   useEffect(() => {
@@ -53,7 +70,7 @@ export function Dialogue({ text: raw, playerName, onClose }: Props) {
     <div className="dialogue-layer" onPointerDown={advance}>
       <div className="dialogue-box">
         <p>{shown}</p>
-        <span className="dialogue-next">▾</span>
+        {done && <span className="dialogue-next">▾</span>}
       </div>
     </div>
   );

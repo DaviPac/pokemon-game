@@ -177,6 +177,9 @@ async function main(): Promise<void> {
     check('segundo encontro apareceu', second);
     if (second) {
       await page.waitForTimeout(3000);
+      await page.evaluate(() => {
+        if (window.__audio) window.__audio.lastMove = null;
+      });
       for (let i = 0; i < 20; i++) {
         if (await page.locator('.battle-continue').count()) break;
         if ((await page.locator('.battle').count()) === 0) break;
@@ -190,6 +193,15 @@ async function main(): Promise<void> {
         await attack.click({ timeout: 2000 }).catch(() => undefined);
         await page.waitForTimeout(2600);
       }
+      // O golpe tem som proprio, montado a partir do tipo e da categoria.
+      check(
+        'golpe tem som proprio, pelo tipo e pela categoria',
+        /^[A-Z][a-z]+\/(Physical|Special|Status)$/.test(
+          (await page.evaluate(() => window.__audio?.lastMove ?? '')) || '',
+        ),
+        `${await page.evaluate(() => window.__audio?.lastMove)}`,
+      );
+
       const waited = await page.locator('.battle-continue').count();
       check(
         'batalha segura a tela com o tema de vitoria',
@@ -280,8 +292,54 @@ async function main(): Promise<void> {
       (await page.evaluate(() => window.__audio?.state)) === 'running',
       `${await page.evaluate(() => window.__audio?.state)}`,
     );
+    // --- Falas, som de golpe e analogico invisivel --------------------------
+    console.log('\n8. falas em portugues e analogico invisivel');
+    // A fala da mae e a primeira que todo jogador ouve.
+    // De frente para a mae: e com ela que a conversa comeca.
+    await teleport(page, 'MAP_PALLET_TOWN_PLAYERS_HOUSE_1F', 8, 5, 'up');
+    await page.waitForTimeout(2000);
+    await page.keyboard.press('z');
+    await page.waitForTimeout(250);
+    const parcial = (await page.locator('.dialogue-box p').textContent()) ?? '';
+    await page.locator('.dialogue-layer').click({ position: { x: 190, y: 700 } });
+    await page.waitForTimeout(150);
+    const completa = (await page.locator('.dialogue-box p').textContent()) ?? '';
+    check(
+      'um toque completa a fala, sem fechar a caixa',
+      completa.length > parcial.length && (await page.locator('.dialogue-layer').count()) === 1,
+      `${parcial.length} -> ${completa.length} caracteres`,
+    );
+    check('a fala esta em portugues', /descansar/i.test(completa), completa.slice(0, 48));
+    await shot('11-fala-em-portugues');
+    await page.locator('.dialogue-layer').click({ position: { x: 190, y: 700 } });
+    await page.waitForTimeout(200);
+    check(
+      'o toque seguinte passa adiante',
+      (await page.locator('.dialogue-layer').count()) === 0,
+    );
+
+    // No modo novo, o analogico nao desenha nada na tela.
+    await openSettings(page);
+    await page.locator('.option', { hasText: 'Novo' }).first().click();
+    await page.waitForTimeout(300);
+    await page.locator('.sheet-backdrop').click({ position: { x: 10, y: 10 } });
+    await page.waitForTimeout(500);
+    await page.locator('.nav-item', { hasText: 'Mapa' }).first().click();
+    await page.waitForTimeout(900);
+    await page.mouse.move(195, 400);
+    await page.mouse.down();
+    await page.mouse.move(195, 460, { steps: 6 });
+    await page.waitForTimeout(300);
+    check(
+      'analogico do modo novo nao desenha nada',
+      (await page.locator('.ghost-stick-base, .ghost-stick-knob').count()) === 0,
+    );
+    await shot('12-analogico-invisivel');
+    await page.mouse.up();
+    await page.waitForTimeout(400);
+
     // --- Barra inferior estilo Dock ----------------------------------------
-    console.log('\n8. barra inferior: vidro, lupa e recolher');
+    console.log('\n9. barra inferior: vidro, lupa e recolher');
     await page.locator('.nav-item', { hasText: 'Mapa' }).first().click();
     // Pallet Town nao tem grama na porta de casa: da para andar sem encontro.
     await teleport(page, 'MAP_PALLET_TOWN', 6, 8);
@@ -337,7 +395,7 @@ async function main(): Promise<void> {
   // --- Grade sem costura ----------------------------------------------------
   // Numa densidade quebrada (2,75x e comum no Android) a escala fracionada
   // deixava uma linha do fundo entre um tile e outro.
-  console.log('\n9. mapa sem linha entre os tiles');
+  console.log('\n10. mapa sem linha entre os tiles');
   failures += await checkPixelGrid(url, outDir);
 
   if (errors.length > 0) {
@@ -505,10 +563,16 @@ async function openSettings(page: Page): Promise<void> {
   await page.waitForTimeout(800);
 }
 
-async function teleport(page: Page, map: string, x: number, y: number): Promise<void> {
+async function teleport(
+  page: Page,
+  map: string,
+  x: number,
+  y: number,
+  dir: 'up' | 'down' | 'left' | 'right' = 'down',
+): Promise<void> {
   await page.evaluate(
-    ({ map, x, y }) => window.__overworld?.swapTo(map, x, y, 'down'),
-    { map, x, y },
+    ({ map, x, y, dir }) => window.__overworld?.swapTo(map, x, y, dir),
+    { map, x, y, dir },
   );
 }
 

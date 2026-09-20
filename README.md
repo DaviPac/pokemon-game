@@ -58,6 +58,7 @@ Nada e inventado: tudo vem de projetos publicos, convertido em build.
 | Especies, golpes, learnsets, tipos | `@pkmn/dex` (npm) |
 | Taxa de captura, EXP base, EV yield, grupo de crescimento | `veekun/pokedex` |
 | Musicas (MIDI) | `pret/pokefirered` |
+| Traducao das falas para portugues | feita a mao, em `tools/i18n/dialogue.pt.json` |
 | Gritos dos Pokemon | `PokeAPI/cries` |
 
 O pipeline fica em `tools/`:
@@ -68,7 +69,9 @@ O pipeline fica em `tools/`:
 - `build-overworld.ts` — extrai os sprites de personagem do overworld, inclusive
   a folha de corrida do jogador (que no FireRed divide o arquivo com o surf: a
   tabela de quadros e a de animacao do decomp dizem quais indices usar).
-- `build-events.ts` — liga cada NPC ao seu treinador e a sua fala original.
+- `build-events.ts` — liga cada NPC ao seu treinador e a sua fala original, e
+  troca a fala pela traducao em portugues (`tools/i18n/dialogue.pt.json`); o que
+  nao estiver traduzido fica no original, e o build diz quantas faltam.
 - `build-music.ts` — le os MIDIs originais e os converte em notas com tempo em
   segundos, que o sintetizador WebAudio toca ao vivo.
 - `build-icons.ts` — desenha os icones do PWA.
@@ -103,16 +106,18 @@ assim, limpar os dados do site pelo navegador apaga tudo, entao as configuracoes
 trazem **exportar backup** (gera um arquivo), **importar backup** e um pedido de
 armazenamento persistente ao navegador.
 
-`npm run test:capture` faz o mesmo com o fim de batalha e com o acabamento da
-tela: confere que o tema de vitoria segura a tela ate acabar, que a captura abre
+`npm run test:capture` faz o mesmo com o fim de batalha, as falas e o acabamento
+da tela: confere que o tema de vitoria segura a tela ate acabar, que a captura abre
 a tela do Pokemon capturado com o tema tocando, que a musica do lugar volta ao
 chegar no mapa (e que a de batalha nao sobra tocando), que perder leva de volta
 ao Centro Pokemon, que sair do app cala o som, que a barra inferior nao cobre
 botao nenhum, que correr usa o sprite de corrida, que a barra inferior cresce
 sob o dedo e se recolhe ao andar, que as plataformas do campo de batalha saem em
 perspectiva de verdade (a da frente mais aberta que a do fundo, cada Pokemon
-pisando no meio da sua) e que numa tela de densidade quebrada o mapa sai pixel a
-pixel, sem costura entre os tiles.
+pisando no meio da sua), que cada golpe sai com som proprio, que um toque na fala
+completa o texto sem pular a fala, que as falas estao em portugues, que o
+analogico do modo novo nao desenha nada na tela e que numa tela de densidade
+quebrada o mapa sai pixel a pixel, sem costura entre os tiles.
 
 `npm run test:update` verifica isso de ponta a ponta num navegador de verdade:
 instala uma versao, cria um save, publica outra por cima, confere que o aviso

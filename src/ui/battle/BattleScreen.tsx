@@ -161,6 +161,7 @@ export function BattleScreen({
           case 'useMove': {
             const move = ctx.moves[event.move];
             if (move) {
+              audio.move(move.t as PokemonType, move.cat as MoveCategory);
               pushCamera(worldRef.current, animOptions);
               await playMove(
                 spriteRef(event.side).current,

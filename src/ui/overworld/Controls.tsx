@@ -32,11 +32,14 @@ export function Controls({ bus, mode, onMenu }: Props) {
 
 /**
  * Arrastar em qualquer ponto da tela anda naquela direcao. Mudar a direcao do
- * arrasto muda o rumo na hora; soltar para. Sem nada desenhado por cima do jogo.
+ * arrasto muda o rumo na hora; soltar para.
+ *
+ * Nada e desenhado: o analogico e invisivel de verdade. Por isso o ponto de
+ * origem mora numa ref, e nao no estado -- a tela nao tem o que redesenhar a
+ * cada milimetro do dedo.
  */
 function InvisibleStick({ bus }: { bus: InputBus }) {
-  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
-  const [knob, setKnob] = useState<{ x: number; y: number } | null>(null);
+  const origin = useRef<{ x: number; y: number } | null>(null);
   const pointerId = useRef<number | null>(null);
   // Um toque que nao vira arrasto e uma interacao, nao um passo.
   const pressStart = useRef(0);
@@ -59,8 +62,7 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
   const release = () => {
     clearHold();
     pointerId.current = null;
-    setOrigin(null);
-    setKnob(null);
+    origin.current = null;
     bus.dir = null;
     bus.running = false;
   };
@@ -74,8 +76,7 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
         if (pointerId.current !== null) return;
         pointerId.current = e.pointerId;
         (e.target as HTMLElement).setPointerCapture(e.pointerId);
-        setOrigin({ x: e.clientX, y: e.clientY });
-        setKnob({ x: e.clientX, y: e.clientY });
+        origin.current = { x: e.clientX, y: e.clientY };
         pressStart.current = performance.now();
         moved.current = false;
 
@@ -88,22 +89,22 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
         }, HOLD_MS);
       }}
       onPointerMove={(e) => {
-        if (pointerId.current !== e.pointerId || !origin) return;
-        let dx = e.clientX - origin.x;
-        let dy = e.clientY - origin.y;
+        const start = origin.current;
+        if (pointerId.current !== e.pointerId || !start) return;
+        let dx = e.clientX - start.x;
+        let dy = e.clientY - start.y;
         const distance = Math.hypot(dx, dy);
 
         // O centro segue o dedo quando ele se afasta demais: o analogico
         // "flutua" e nunca perde o alcance, como nos jogos de celular bons.
         if (distance > MAX_DRIFT) {
           const scale = (distance - MAX_DRIFT) / distance;
-          const nextOrigin = { x: origin.x + dx * scale, y: origin.y + dy * scale };
-          setOrigin(nextOrigin);
+          const nextOrigin = { x: start.x + dx * scale, y: start.y + dy * scale };
+          origin.current = nextOrigin;
           dx = e.clientX - nextOrigin.x;
           dy = e.clientY - nextOrigin.y;
         }
 
-        setKnob({ x: e.clientX, y: e.clientY });
         const dir = vectorToDirection(dx, dy, DEADZONE);
         if (dir) {
           moved.current = true;
@@ -123,15 +124,7 @@ function InvisibleStick({ bus }: { bus: InputBus }) {
         release();
       }}
       onPointerCancel={release}
-    >
-      {origin && knob && (
-        // Um rastro discreto so para confirmar o toque; some ao soltar.
-        <>
-          <span className="ghost-stick-base" style={{ left: origin.x, top: origin.y }} />
-          <span className="ghost-stick-knob" style={{ left: knob.x, top: knob.y }} />
-        </>
-      )}
-    </div>
+    />
   );
 }
 
