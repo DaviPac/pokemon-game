@@ -65,7 +65,9 @@ O pipeline fica em `tools/`:
 - `build-world.ts` — compoe os atlas de metatiles (tiles 4bpp + paletas JASC +
   `metatiles.bin`) e converte cada `map.bin` num JSON compacto.
 - `build-dex.ts` — reduz o `@pkmn/dex` a um JSON enxuto de Gen 1–6.
-- `build-overworld.ts` — extrai os sprites de personagem do overworld.
+- `build-overworld.ts` — extrai os sprites de personagem do overworld, inclusive
+  a folha de corrida do jogador (que no FireRed divide o arquivo com o surf: a
+  tabela de quadros e a de animacao do decomp dizem quais indices usar).
 - `build-events.ts` — liga cada NPC ao seu treinador e a sua fala original.
 - `build-music.ts` — le os MIDIs originais e os converte em notas com tempo em
   segundos, que o sintetizador WebAudio toca ao vivo.
@@ -100,6 +102,12 @@ migracoes so somam campos novos: nenhuma versao nova custa progresso. Ainda
 assim, limpar os dados do site pelo navegador apaga tudo, entao as configuracoes
 trazem **exportar backup** (gera um arquivo), **importar backup** e um pedido de
 armazenamento persistente ao navegador.
+
+`npm run test:capture` faz o mesmo com o fim de batalha: confere que o tema de
+vitoria segura a tela ate acabar, que a captura abre a tela do Pokemon capturado
+com o tema tocando, que a musica do lugar volta ao chegar no mapa (e que a de
+batalha nao sobra tocando), que a barra inferior nao cobre botao nenhum e que
+correr usa o sprite de corrida.
 
 `npm run test:update` verifica isso de ponta a ponta num navegador de verdade:
 instala uma versao, cria um save, publica outra por cima, confere que o aviso

@@ -147,6 +147,8 @@ export interface OverworldSpriteMeta {
   frameHeight: number;
   frames: number;
   inanimate: boolean;
+  /** Folha de corrida, quando o personagem tem uma: 9 quadros, como a de andar. */
+  run?: string;
 }
 
 // --- Pokemon --------------------------------------------------------------

@@ -138,6 +138,10 @@ export function OverworldScreen({
     if (!overworld) return;
     overworld.paused = paused;
     if (paused) busRef.current.clear();
+    // Voltando de uma batalha (ou de um menu), a musica do lugar volta com o
+    // jogador: quem tocou por cima -- tema de batalha, de vitoria, de captura
+    // -- ja cumpriu seu papel e nao pode continuar ali no mapa.
+    if (!paused) void audio.playMusic(songForMap(overworld.world.map));
   }, [paused, ready]);
 
   // --- Loop -----------------------------------------------------------------

@@ -20,6 +20,7 @@ export interface Camera {
 export class OverworldRenderer {
   private atlases = new Map<string, HTMLImageElement>();
   private sprites = new Map<string, HTMLImageElement>();
+  private running = new Map<string, HTMLImageElement>();
   private spriteMeta: Record<string, OverworldSpriteMeta> = {};
 
   setSpriteMeta(meta: Record<string, OverworldSpriteMeta>): void {
@@ -60,6 +61,13 @@ export class OverworldRenderer {
           this.sprites.set(gfx, await overworldImage(meta.file));
         } catch {
           // sem sprite: o NPC simplesmente nao aparece
+        }
+        if (meta.run) {
+          try {
+            this.running.set(gfx, await overworldImage(meta.run));
+          } catch {
+            // sem folha de corrida: sobra a de caminhada, acelerada
+          }
         }
       }),
     );
@@ -119,7 +127,12 @@ export class OverworldRenderer {
       if (px > originX + viewWidth / scale + 64 || py > originY + viewHeight / scale + 96) continue;
       actors.push({
         y: py,
-        draw: () => this.drawCharacter(ctx, npc.data.gfx, px, py, npc.dir, npc.moving, npc.animFrame),
+        draw: () =>
+          this.drawCharacter(ctx, npc.data.gfx, px, py, {
+            dir: npc.dir,
+            moving: npc.moving,
+            animFrame: npc.animFrame,
+          }),
       });
     }
 
@@ -132,15 +145,15 @@ export class OverworldRenderer {
     actors.push({
       y: playerPy,
       draw: () =>
-        this.drawCharacter(
-          ctx,
-          FALLBACK_SPRITE,
-          playerPx,
-          playerPy,
-          player.dir,
-          player.moving,
-          player.animFrame,
-        ),
+        this.drawCharacter(ctx, FALLBACK_SPRITE, playerPx, playerPy, {
+          dir: player.dir,
+          moving: player.moving,
+          animFrame: player.animFrame,
+          // Correndo, o passo alterna a cada tile: um pe em cada passo, como
+          // no original -- por isso a contagem de passos entra na conta.
+          running: player.running && !player.jumping,
+          step: player.steps,
+        }),
     });
 
     actors.sort((a, b) => a.y - b.y);
@@ -164,15 +177,25 @@ export class OverworldRenderer {
     gfx: string,
     px: number,
     py: number,
-    dir: Direction,
-    moving: boolean,
-    animFrame: number,
+    pose: {
+      dir: Direction;
+      moving: boolean;
+      animFrame: number;
+      running?: boolean;
+      step?: number;
+    },
   ): void {
-    const image = this.sprites.get(gfx) ?? this.sprites.get(FALLBACK_SPRITE);
     const meta = this.spriteMeta[gfx] ?? this.spriteMeta[FALLBACK_SPRITE];
-    if (!image || !meta) return;
+    if (!meta) return;
 
-    const { frame, flip } = characterFrame(dir, moving, animFrame, meta.frames);
+    // Correr tem folha propria: nao e a caminhada acelerada.
+    const runSheet = pose.running && pose.moving ? this.running.get(gfx) : undefined;
+    const image = runSheet ?? this.sprites.get(gfx) ?? this.sprites.get(FALLBACK_SPRITE);
+    if (!image) return;
+
+    const { frame, flip } = runSheet
+      ? runningFrame(pose.dir, pose.animFrame, pose.step ?? 0)
+      : characterFrame(pose.dir, pose.moving, pose.animFrame, meta.frames);
     const perRow = Math.max(1, Math.floor(image.width / meta.frameWidth));
     const sx = (frame % perRow) * meta.frameWidth;
     const sy = Math.floor(frame / perRow) * meta.frameHeight;
@@ -228,6 +251,21 @@ function characterFrame(
     right: [7, 8],
   };
   return { frame: pairs[dir][animFrame % 2], flip };
+}
+
+/**
+ * Folha de corrida: tres quadros por direcao (parado, pe direito, pe esquerdo),
+ * na ordem sul, norte, oeste. Como no original, cada passo mostra o corpo
+ * neutro e depois um pe, alternando o pe a cada tile percorrido.
+ */
+function runningFrame(
+  dir: Direction,
+  animFrame: number,
+  step: number,
+): { frame: number; flip: boolean } {
+  const base = dir === 'down' ? 0 : dir === 'up' ? 3 : 6;
+  const foot = 1 + (step % 2);
+  return { frame: animFrame % 2 === 0 ? base : base + foot, flip: dir === 'right' };
 }
 
 function lerp(from: number, to: number, t: number): number {

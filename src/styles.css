@@ -15,6 +15,12 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
+  /**
+   * Altura reservada pela navegacao inferior. Tudo que encosta no rodape --
+   * controles do mapa, listas, caixa de fala -- se afasta por esta medida, para
+   * a barra nunca cobrir um botao.
+   */
+  --nav-height: calc(76px + var(--safe-bottom));
 
   color-scheme: dark;
 }
@@ -140,7 +146,7 @@ select {
 .touch-hint {
   position: absolute;
   left: 50%;
-  bottom: calc(var(--safe-bottom) + 28px);
+  bottom: calc(var(--nav-height) + 14px);
   transform: translateX(-50%);
   padding: 10px 18px;
   border-radius: 999px;
@@ -170,7 +176,7 @@ select {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  padding: 0 calc(var(--safe-left) + 18px) calc(var(--safe-bottom) + 22px)
+  padding: 0 calc(var(--safe-left) + 18px) calc(var(--nav-height) + 14px)
     calc(var(--safe-right) + 18px);
   pointer-events: none;
 }
@@ -399,7 +405,7 @@ select {
   display: flex;
   align-items: flex-end;
   /* Acima da navegacao inferior, para a fala nunca ficar atras dela. */
-  padding: 0 calc(var(--safe-left) + 12px) calc(var(--safe-bottom) + 96px)
+  padding: 0 calc(var(--safe-left) + 12px) calc(var(--nav-height) + 16px)
     calc(var(--safe-right) + 12px);
   background: linear-gradient(to top, rgba(0, 0, 0, 0.35), transparent 45%);
 }
@@ -444,6 +450,8 @@ select {
 .sheet-backdrop {
   position: absolute;
   inset: 0;
+  /* Acima da navegacao inferior: ela nao pode cobrir os botoes da folha. */
+  z-index: 45;
   background: rgba(0, 0, 0, 0.55);
   display: flex;
   align-items: flex-end;
@@ -606,7 +614,7 @@ select {
   }
 
   .legacy-controls {
-    padding-bottom: 32px;
+    padding-bottom: calc(var(--nav-height) + 24px);
   }
 }
 
@@ -1238,6 +1246,7 @@ select {
   right: 0;
   bottom: 0;
   z-index: 20;
+  height: var(--nav-height);
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   align-items: end;
@@ -1308,7 +1317,7 @@ select {
   overflow-y: auto;
   touch-action: pan-y;
   overscroll-behavior: contain;
-  padding: calc(var(--safe-top) + 20px) 16px 104px;
+  padding: calc(var(--safe-top) + 20px) 16px calc(var(--nav-height) + 28px);
   background: var(--bg);
 }
 
@@ -2099,8 +2108,8 @@ select {
 }
 
 .intro-starter {
-  width: 148px;
-  height: 148px;
+  width: 180px;
+  height: 180px;
   object-fit: contain;
   animation: intro-pop 0.5s cubic-bezier(0.2, 0.9, 0.3, 1.3);
 }
@@ -2428,4 +2437,196 @@ select {
   border: 1px solid rgba(79, 157, 255, 0.3);
   font-size: 13px;
   line-height: 1.45;
+}
+
+/* --- Fim de batalha e captura -------------------------------------------- */
+
+.battle-continue {
+  align-self: center;
+  padding: 10px 22px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.16);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-dim);
+  font-size: 14px;
+  animation: pulse-hint 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse-hint {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.caught-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 50;
+  overflow: hidden auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 14px;
+  padding: calc(var(--safe-top) + 30px) 20px calc(var(--safe-bottom) + 24px);
+  background: radial-gradient(120% 70% at 50% 18%, #1d2a44 0%, var(--bg) 62%);
+  animation: fade-in 0.25s ease;
+  text-align: center;
+}
+
+/* Brilho atras do Pokemon, exatamente onde ele aparece. */
+.caught-stage::before {
+  content: '';
+  position: absolute;
+  width: 320px;
+  height: 320px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle at center,
+    rgba(255, 203, 61, 0.28) 0%,
+    rgba(255, 203, 61, 0.1) 36%,
+    transparent 64%
+  );
+  animation: caught-glow 2.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+@keyframes caught-glow {
+  0%,
+  100% {
+    opacity: 0.72;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.caught-head {
+  position: relative;
+  /* Com o botao empurrado para o rodape, as duas margens automaticas deixam o
+     bloco do Pokemon centrado no espaco que sobra. */
+  margin-top: auto;
+}
+
+.caught-kicker {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 2.4px;
+  text-transform: uppercase;
+  color: var(--accent-warm);
+}
+
+.caught-title {
+  margin: 6px 0 0;
+  font-size: 23px;
+  letter-spacing: -0.3px;
+}
+
+.caught-stage {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 216px;
+  height: 216px;
+}
+
+.caught-ball {
+  position: absolute;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  border: 3px solid #1a1d24;
+  background: linear-gradient(to bottom, #e8503a 0 46%, #1a1d24 46% 54%, #f4f6fa 54% 100%);
+  transition:
+    transform 0.4s ease,
+    opacity 0.3s ease 0.15s;
+}
+
+.caught-sprite {
+  width: 180px;
+  height: 180px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  opacity: 0;
+  transform: scale(0.4);
+  transition:
+    transform 0.4s cubic-bezier(0.2, 1.3, 0.4, 1),
+    opacity 0.3s ease;
+  filter: drop-shadow(0 12px 16px rgba(0, 0, 0, 0.45));
+}
+
+.caught-stage-open .caught-ball {
+  transform: scale(2.4);
+  opacity: 0;
+}
+
+.caught-stage-open .caught-sprite {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.caught-card {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 16px;
+  border-radius: var(--radius);
+  background: rgba(22, 27, 37, 0.92);
+  border: 1px solid var(--line);
+}
+
+.caught-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 14px;
+  color: var(--text-dim);
+}
+
+.caught-dex {
+  font-variant-numeric: tabular-nums;
+}
+
+.caught-level {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.caught-types {
+  display: flex;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.caught-shiny {
+  background: linear-gradient(120deg, #ffd85e, #ff9f43);
+  color: #2a1a00;
+}
+
+.caught-where {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.caught-dexnew {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent-warm);
+}
+
+.caught-continue {
+  position: relative;
+  width: 100%;
+  max-width: 420px;
+  margin-top: auto;
 }

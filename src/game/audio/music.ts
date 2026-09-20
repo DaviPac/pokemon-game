@@ -83,7 +83,11 @@ export class MusicPlayer {
     this.output.gain.linearRampToValueAtTime(0, now + fadeSeconds);
 
     this.song = null;
+    // Quem esperava o fim da musica precisa ser avisado mesmo quando ela e
+    // interrompida, senao fica esperando para sempre.
+    const done = this.onDone;
     this.onDone = null;
+    done?.();
   }
 
   setVolume(volume: number): void {

@@ -17,6 +17,33 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.3.1',
+    date: '2026-09-20',
+    title: 'A captura ganhou sua cena',
+    changes: [
+      {
+        kind: 'novo',
+        text: 'Tela de captura: o Pokemon aparece inteiro, com tipos, nivel e para onde foi -- equipe ou caixa -- enquanto o tema da captura toca.',
+      },
+      {
+        kind: 'novo',
+        text: 'Sprite de corrida do jogador, tirado do proprio FireRed, no lugar da caminhada acelerada.',
+      },
+      {
+        kind: 'melhoria',
+        text: 'O tema de vitoria comeca quando o adversario cai e a batalha so sai da tela quando ele termina (ou quando voce toca para continuar).',
+      },
+      {
+        kind: 'correcao',
+        text: 'A musica de batalha continuava tocando no mapa depois de uma captura.',
+      },
+      {
+        kind: 'correcao',
+        text: 'A barra inferior cobria botoes dos controles e o fim dos menus.',
+      },
+    ],
+  },
+  {
     version: '0.3.0',
     date: '2026-09-20',
     title: 'Som, abertura e atualizacoes automaticas',

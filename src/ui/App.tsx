@@ -18,6 +18,7 @@ import { audio } from '../game/audio/index.js';
 import { shinyChanceFor, useGame } from '../state/game.js';
 import { haptic } from '../state/settings.js';
 import { BattleScreen } from './battle/BattleScreen.js';
+import { CaughtScreen } from './battle/CaughtScreen.js';
 import { OverworldScreen } from './overworld/OverworldScreen.js';
 import { Bag } from './screens/Bag.js';
 import { NewGame } from './screens/NewGame.js';
@@ -44,6 +45,13 @@ interface PendingBattle {
   prize: number;
 }
 
+/** O que a tela de captura precisa contar ao jogador. */
+interface CaptureResult {
+  pokemon: Pokemon;
+  where: 'party' | 'box';
+  isNew: boolean;
+}
+
 export function App() {
   const { ctx, chart, save, loading, boot } = useGame();
   const [stage, setStage] = useState<Stage>('title');
@@ -54,6 +62,7 @@ export function App() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shopOpen, setShopOpen] = useState(false);
   const [battle, setBattle] = useState<PendingBattle | null>(null);
+  const [captured, setCaptured] = useState<CaptureResult | null>(null);
   const [events, setEvents] = useState<EventsFile | null>(null);
   const [newNotes, setNewNotes] = useState<PatchNote[]>([]);
   const rngRef = useRef(new RNG());
@@ -133,7 +142,7 @@ export function App() {
       case 'heal':
         state.healParty();
         haptic([14, 60, 14]);
-        void audio.playJingle('mus_heal');
+        audio.playJingle('mus_heal');
         setDialogue('Sua equipe foi tratada e esta em plena forma. Ate a proxima!');
         break;
 
@@ -194,15 +203,12 @@ export function App() {
     });
 
     if (caught) {
+      // Antes de registrar: depois disso toda especie parece ja conhecida.
+      const isNew = !(state.save?.caught.includes(caught.species) ?? false);
       state.registerCaught(caught);
       const where = state.addToParty(caught);
       state.addTrainerXp(120);
-      const name = state.ctx ? state.ctx.species[String(caught.species)].n : 'O Pokemon';
-      setDialogue(
-        where === 'party'
-          ? `${name} entrou na sua equipe!`
-          : `${name} foi capturado e enviado para a caixa.`,
-      );
+      setCaptured({ pokemon: caught, where, isNew });
     } else if (outcome === 'win') {
       state.addTrainerXp(current.prize > 0 ? 110 : 45);
       if (current.prize > 0) {
@@ -304,7 +310,8 @@ export function App() {
     return <div className="boot-screen">Carregando…</div>;
   }
 
-  const overlayOpen = dialogue !== null || settingsOpen || shopOpen || tab !== 'map';
+  const overlayOpen =
+    dialogue !== null || settingsOpen || shopOpen || captured !== null || tab !== 'map';
 
   return (
     <div className="app">
@@ -346,7 +353,17 @@ export function App() {
         />
       )}
 
-      {!battle && <BottomNav active={tab} onChange={setTab} badge={questBadge} />}
+      {captured && (
+        <CaughtScreen
+          ctx={ctx}
+          pokemon={captured.pokemon}
+          where={captured.where}
+          isNew={captured.isNew}
+          onClose={() => setCaptured(null)}
+        />
+      )}
+
+      {!battle && !captured && <BottomNav active={tab} onChange={setTab} badge={questBadge} />}
 
       {arriving && <div className="map-arrival" />}
 

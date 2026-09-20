@@ -19,6 +19,12 @@ const MAPS_DIR = join(OUT_DATA, 'maps');
 /** Sempre exportados, mesmo que nenhum mapa os referencie. */
 const ALWAYS = ['OBJ_EVENT_GFX_RED_NORMAL', 'OBJ_EVENT_GFX_GREEN_NORMAL'];
 
+/**
+ * Quem ganha folha de corrida. Correr e coisa do jogador: os NPCs de Kanto so
+ * caminham, e montar a folha deles seria peso baixado a toa.
+ */
+const RUNNERS = ['OBJ_EVENT_GFX_RED_NORMAL', 'OBJ_EVENT_GFX_GREEN_NORMAL'];
+
 async function main(): Promise<void> {
   await rm(OUT_SPRITES, { recursive: true, force: true });
   await mkdir(OUT_SPRITES, { recursive: true });
@@ -50,28 +56,10 @@ async function main(): Promise<void> {
       return;
     }
 
-    const buf = await fetchSource('firered', picPath);
-    if (!buf) {
+    const png = await loadPic(picPath);
+    if (!png) {
       missing.push(gfx);
       return;
-    }
-
-    const image = readIndexedPng(buf);
-    const palette = image.embedded;
-    if (!palette) {
-      missing.push(gfx);
-      return;
-    }
-
-    const png = new PNG({ width: image.width, height: image.height, colorType: 6 });
-    png.data.fill(0);
-    for (let i = 0; i < image.indices.length; i++) {
-      const index = image.indices[i];
-      if (index === 0) continue; // cor 0 e a transparencia nos sprites do GBA
-      png.data[i * 4] = palette[index * 3];
-      png.data[i * 4 + 1] = palette[index * 3 + 1];
-      png.data[i * 4 + 2] = palette[index * 3 + 2];
-      png.data[i * 4 + 3] = 255;
     }
 
     const file = `${slugify(gfx)}.png`;
@@ -81,10 +69,12 @@ async function main(): Promise<void> {
       file,
       frameWidth: info.width,
       frameHeight: info.height,
-      frames: Math.floor(image.width / info.width) * Math.floor(image.height / info.height),
+      frames: Math.floor(png.width / info.width) * Math.floor(png.height / info.height),
       inanimate: info.inanimate,
     };
   });
+
+  await buildRunningSheets(out, { picPaths, infos, pointers });
 
   await writeFile(join(OUT_DATA, 'overworld.json'), JSON.stringify(out));
   console.log(`[ow] ${Object.keys(out).length} sprites exportados, ${missing.length} sem grafico`);
@@ -97,6 +87,159 @@ interface OverworldSprite {
   frameHeight: number;
   frames: number;
   inanimate: boolean;
+  /** Folha de corrida, quando existe: 9 quadros (sul, norte, oeste). */
+  run?: string;
+}
+
+/**
+ * Monta a folha de corrida do jogador.
+ *
+ * No FireRed os quadros de corrida nao moram no mesmo arquivo da caminhada:
+ * eles dividem a folha com o surf. Quem junta as duas e a tabela de quadros do
+ * decomp, e a tabela de animacao diz quais indices a corrida usa. Seguimos as
+ * duas para nao chutar posicao de sprite.
+ */
+async function buildRunningSheets(
+  out: Record<string, OverworldSprite>,
+  source: {
+    picPaths: Map<string, string>;
+    infos: Map<string, GraphicsInfo>;
+    pointers: Map<string, string>;
+  },
+): Promise<void> {
+  const tables = await parsePicTables();
+  const runFrames = await parseRunFrames();
+  if (runFrames.length === 0) {
+    console.log('[ow] tabela de animacao sem quadros de corrida; folha nao gerada');
+    return;
+  }
+
+  for (const gfx of RUNNERS) {
+    const entry = out[gfx];
+    const info = source.infos.get(source.pointers.get(gfx) ?? '');
+    const table = info ? tables.get(info.picLabel) : undefined;
+    if (!entry || !info || !table) continue;
+
+    const sheet = new PNG({
+      width: info.width * runFrames.length,
+      height: info.height,
+      colorType: 6,
+    });
+    sheet.data.fill(0);
+
+    let complete = true;
+    for (const [slot, index] of runFrames.entries()) {
+      const frame = table[index];
+      const picPath = frame ? source.picPaths.get(frame.pic) : undefined;
+      const png = picPath ? await loadPic(picPath) : null;
+      if (!frame || !png) {
+        complete = false;
+        break;
+      }
+      const perRow = Math.max(1, Math.floor(png.width / info.width));
+      copyFrame(png, sheet, {
+        sx: (frame.frame % perRow) * info.width,
+        sy: Math.floor(frame.frame / perRow) * info.height,
+        dx: slot * info.width,
+        width: info.width,
+        height: info.height,
+      });
+    }
+    if (!complete) continue;
+
+    const file = `${slugify(gfx)}_running.png`;
+    await writeFile(join(OUT_SPRITES, file), PNG.sync.write(sheet));
+    entry.run = file;
+    console.log(`[ow] folha de corrida de ${gfx}: ${runFrames.length} quadros`);
+  }
+}
+
+/** Recorta um quadro de uma folha para outra. */
+function copyFrame(
+  from: PNG,
+  to: PNG,
+  rect: { sx: number; sy: number; dx: number; width: number; height: number },
+): void {
+  for (let y = 0; y < rect.height; y++) {
+    for (let x = 0; x < rect.width; x++) {
+      const src = ((rect.sy + y) * from.width + rect.sx + x) * 4;
+      const dst = (y * to.width + rect.dx + x) * 4;
+      to.data[dst] = from.data[src];
+      to.data[dst + 1] = from.data[src + 1];
+      to.data[dst + 2] = from.data[src + 2];
+      to.data[dst + 3] = from.data[src + 3];
+    }
+  }
+}
+
+const picCache = new Map<string, Promise<PNG | null>>();
+
+/** Le um PNG indexado do decomp e devolve em RGBA, com a cor 0 transparente. */
+function loadPic(picPath: string): Promise<PNG | null> {
+  const cached = picCache.get(picPath);
+  if (cached) return cached;
+
+  const promise = (async () => {
+    const buf = await fetchSource('firered', picPath);
+    if (!buf) return null;
+    const image = readIndexedPng(buf);
+    const palette = image.embedded;
+    if (!palette) return null;
+
+    const png = new PNG({ width: image.width, height: image.height, colorType: 6 });
+    png.data.fill(0);
+    for (let i = 0; i < image.indices.length; i++) {
+      const index = image.indices[i];
+      if (index === 0) continue; // cor 0 e a transparencia nos sprites do GBA
+      png.data[i * 4] = palette[index * 3];
+      png.data[i * 4 + 1] = palette[index * 3 + 1];
+      png.data[i * 4 + 2] = palette[index * 3 + 2];
+      png.data[i * 4 + 3] = 255;
+    }
+    return png;
+  })();
+
+  picCache.set(picPath, promise);
+  return promise;
+}
+
+/**
+ * sPicTable_RedNormal -> [{ pic: 'RedNormal', frame: 0 }, ...]. Uma tabela pode
+ * puxar quadros de mais de um arquivo -- e o caso justamente da corrida.
+ */
+async function parsePicTables(): Promise<Map<string, { pic: string; frame: number }[]>> {
+  const text = await requiredText('src/data/object_events/object_event_pic_tables.h');
+  const tables = new Map<string, { pic: string; frame: number }[]>();
+  for (const match of text.matchAll(
+    /sPicTable_(\w+)\[\]\s*=\s*\{([\s\S]*?)\n\}/g,
+  )) {
+    const frames = [...match[2].matchAll(/gObjectEventPic_(\w+),\s*\d+,\s*\d+,\s*(\d+)/g)].map(
+      (frame) => ({ pic: frame[1], frame: Number(frame[2]) }),
+    );
+    if (frames.length > 0) tables.set(match[1], frames);
+  }
+  return tables;
+}
+
+/**
+ * Indices da tabela de quadros que a corrida usa, na ordem parado/passo A/passo
+ * B para sul, norte e oeste (o leste e o oeste espelhado, como na caminhada).
+ */
+async function parseRunFrames(): Promise<number[]> {
+  const text = await requiredText('src/data/object_events/object_event_anims.h');
+  const frames: number[] = [];
+  for (const name of ['RunSouth', 'RunNorth', 'RunWest']) {
+    const body = new RegExp(`sAnim_${name}\\[\\]\\s*=\\s*\\{([\\s\\S]*?)\\n\\};`).exec(text)?.[1];
+    if (!body) return [];
+    const seen: number[] = [];
+    for (const cmd of body.matchAll(/ANIMCMD_FRAME\((\d+)/g)) {
+      const index = Number(cmd[1]);
+      if (!seen.includes(index)) seen.push(index);
+    }
+    if (seen.length !== 3) return [];
+    frames.push(...seen);
+  }
+  return frames;
 }
 
 /** gObjectEventPic_RedNormal -> graphics/object_events/pics/people/red_normal.png */

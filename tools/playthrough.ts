@@ -11,21 +11,11 @@
 import { mkdir } from 'node:fs/promises';
 import { join } from 'node:path';
 import { chromium, type Page } from 'playwright';
+// Declara os ganchos de desenvolvimento no `window`.
+import './lib/hooks.js';
 
 const VIEWPORT = { width: 390, height: 844 }; // iPhone 14/15 em retrato
 
-/** A parte do motor que o gancho de desenvolvimento expoe. */
-interface OverworldHandle {
-  player: Record<string, unknown>;
-  npcs: { x: number; y: number; data: { script: string } }[];
-  swapTo(map: string, x: number, y: number, dir: string): Promise<void>;
-}
-
-declare global {
-  interface Window {
-    __overworld?: OverworldHandle;
-  }
-}
 const CHROMIUM = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
 async function main(): Promise<void> {

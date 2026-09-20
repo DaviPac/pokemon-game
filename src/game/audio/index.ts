@@ -32,9 +32,18 @@ class AudioEngine {
   private songs = new Map<SongId, Promise<MusicSong | null>>();
   private cries = new Map<number, HTMLAudioElement>();
 
+  /** O que esta saindo pelo alto-falante agora. */
   private currentSong: SongId | null = null;
-  /** Musica que estava tocando antes de um jingle curto entrar na frente. */
-  private resumeSong: SongId | null = null;
+  /** A musica do lugar (mapa, batalha): volta sozinha quando um trecho acaba. */
+  private ambient: SongId | null = null;
+  /** True enquanto um trecho curto (vitoria, captura) toca por cima. */
+  private cuePlaying = false;
+  /**
+   * Cada pedido de musica ganha um numero. Um trecho que termina depois de
+   * outro pedido nao pode ressuscitar a musica que ele mesmo interrompeu --
+   * era assim que o tema de batalha voltava a tocar no meio do mapa.
+   */
+  private request = 0;
   private pending: PendingMusic | null = null;
 
   private musicVolume = 0.55;
@@ -72,11 +81,16 @@ class AudioEngine {
     return this.context !== null && !this.muted;
   }
 
+  /** O que esta tocando agora. Util para depurar e para os testes de tela. */
+  get nowPlaying(): SongId | null {
+    return this.currentSong;
+  }
+
   setMuted(muted: boolean): void {
     this.muted = muted;
     this.applyVolumes();
     if (muted) this.music?.stop(0.1);
-    else if (this.currentSong) void this.playMusic(this.currentSong);
+    else if (this.ambient) void this.playMusic(this.ambient, { force: true });
   }
 
   setMusicVolume(volume: number): void {
@@ -97,9 +111,72 @@ class AudioEngine {
     this.sfxGain.gain.setTargetAtTime(this.muted ? 0 : this.sfxVolume, now, 0.05);
   }
 
-  /** Troca a musica de fundo. Repetir a mesma musica nao a reinicia. */
+  /** Troca a musica do lugar. Repetir a mesma musica nao a reinicia. */
   async playMusic(id: SongId, { loop = true, force = false } = {}): Promise<void> {
+    // Um trecho curto por cima ja vai devolver esta musica ao terminar: pedi-la
+    // de novo agora so cortaria o trecho no meio.
+    if (this.cuePlaying && this.ambient === id && !force) return;
+    if (loop) this.ambient = id;
+    await this.start(id, loop, force);
+  }
+
+  /**
+   * Toca um trecho curto por cima da musica do lugar (capturou, subiu de
+   * nivel, venceu) e avisa quando ele termina -- inclusive se for interrompido,
+   * para quem esperava nao ficar preso. Com `resume`, a musica de fundo volta
+   * sozinha no fim; sem, o silencio fica para quem chamou resolver.
+   */
+  async playCue(id: SongId, { resume = true } = {}): Promise<void> {
+    if (!this.context || !this.music || this.muted) return;
+    const song = await this.loadSong(id);
+    if (!song) return;
+
+    const token = ++this.request;
+    const ambient = this.ambient;
+    this.currentSong = id;
+    this.cuePlaying = true;
+
+    await new Promise<void>((resolve) => {
+      this.music?.play(song, {
+        loop: false,
+        onDone: () => {
+          // Outro pedido tomou o lugar deste: quem chamou so precisa seguir.
+          if (this.request !== token) {
+            resolve();
+            return;
+          }
+          this.cuePlaying = false;
+          this.currentSong = null;
+          if (resume && ambient) void this.start(ambient, true, false);
+          resolve();
+        },
+      });
+    });
+  }
+
+  /**
+   * Um trecho curto sem ninguem esperando por ele. Nao atropela outro que ja
+   * esteja tocando por cima: subir de nivel no fim da batalha nao pode cortar
+   * o tema de vitoria no meio.
+   */
+  playJingle(id: SongId): void {
+    if (this.cuePlaying) return;
+    void this.playCue(id);
+  }
+
+  stopMusic(): void {
+    this.request++;
+    this.cuePlaying = false;
+    this.currentSong = null;
+    this.ambient = null;
+    this.pending = null;
+    this.music?.stop();
+  }
+
+  private async start(id: SongId, loop: boolean, force: boolean): Promise<void> {
+    const token = ++this.request;
     if (!force && this.currentSong === id && this.music?.playing) return;
+    this.cuePlaying = false;
     this.currentSong = id;
 
     if (!this.context || !this.music) {
@@ -110,38 +187,8 @@ class AudioEngine {
 
     const song = await this.loadSong(id);
     // Outra musica pode ter sido pedida enquanto esta carregava.
-    if (!song || this.currentSong !== id) return;
+    if (!song || this.request !== token) return;
     this.music.play(song, { loop });
-  }
-
-  /**
-   * Toca um trecho curto por cima (capturou, subiu de nivel) e volta sozinho
-   * para a musica que estava tocando.
-   */
-  async playJingle(id: SongId): Promise<void> {
-    if (!this.context || !this.music || this.muted) return;
-    const song = await this.loadSong(id);
-    if (!song) return;
-
-    this.resumeSong = this.currentSong;
-    this.currentSong = id;
-    const previous = this.resumeSong;
-    this.music.play(song, {
-      loop: false,
-      onDone: () => {
-        this.resumeSong = null;
-        if (previous) {
-          this.currentSong = null;
-          void this.playMusic(previous);
-        }
-      },
-    });
-  }
-
-  stopMusic(): void {
-    this.currentSong = null;
-    this.pending = null;
-    this.music?.stop();
   }
 
   sfx(name: SfxName): void {

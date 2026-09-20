@@ -67,6 +67,9 @@ export function BattleScreen({
   const playerSpriteRef = useRef<HTMLImageElement>(null);
   const foeSpriteRef = useRef<HTMLImageElement>(null);
   const busyRef = useRef(false);
+  /** Tema de vitoria ou de captura em andamento, e o atalho para pula-lo. */
+  const cueRef = useRef<Promise<void> | null>(null);
+  const skipRef = useRef<(() => void) | null>(null);
 
   const fast = useSettings((s) => s.fastAnimations);
   const animationsOn = useSettings((s) => s.battleAnimations);
@@ -77,6 +80,8 @@ export function BattleScreen({
   const [player, setPlayer] = useState<SideView>(() => viewOf(ctx, battle.active('player'), true));
   const [foe, setFoe] = useState<SideView>(() => viewOf(ctx, battle.active('foe'), false));
   const [finished, setFinished] = useState<BattleOutcome | null>(null);
+  /** Tela parada no fim da batalha, esperando o tema terminar. */
+  const [waitingMusic, setWaitingMusic] = useState(false);
   const [activeSlot, setActiveSlot] = useState(battle.player.activeIndex);
   // Quem ja caiu na animacao; os pontinhos da equipe seguem isto, nao o motor.
   const [faintedUids, setFaintedUids] = useState<string[]>([]);
@@ -94,10 +99,30 @@ export function BattleScreen({
     else setFoe(apply);
   }, []);
 
+  /**
+   * Segura a tela ate o tema terminar -- ou ate o jogador tocar, que nem todo
+   * mundo quer ouvir a musica inteira depois de cada vitoria.
+   */
+  const holdForMusic = useCallback(async (cue: Promise<void> | null) => {
+    if (!cue) return;
+    setWaitingMusic(true);
+    await Promise.race([
+      cue,
+      new Promise<void>((resolve) => {
+        skipRef.current = resolve;
+      }),
+    ]);
+    skipRef.current = null;
+    setWaitingMusic(false);
+  }, []);
+
   const play = useCallback(
     async (events: BattleEvent[]) => {
       busyRef.current = true;
       setMenu('none');
+      // O tema de vitoria comeca quando o ultimo adversario cai, nao no fim do
+      // turno: assim a barra de EXP sobe junto com a musica, como nos jogos.
+      const winning = events.some((e) => e.t === 'end' && e.outcome === 'win');
 
       for (const event of events) {
         switch (event.t) {
@@ -192,6 +217,12 @@ export function BattleScreen({
             await playFaint(spriteRef(event.side).current, animOptions);
             patch(event.side, { hp: 0 });
             setFaintedUids((current) => [...current, fallen.uid]);
+            if (winning && event.side === 'foe' && !cueRef.current) {
+              cueRef.current = audio.playCue(
+                battle.config.kind === 'trainer' ? 'mus_victory_trainer' : 'mus_victory_wild',
+                { resume: false },
+              );
+            }
             await wait(240 / animOptions.speed);
             break;
           }
@@ -210,12 +241,14 @@ export function BattleScreen({
 
           case 'caught':
             haptic([30, 60, 30, 60, 60]);
-            void audio.playJingle('mus_caught');
+            // O tema da captura segue tocando na tela do Pokemon capturado; por
+            // isso ele nao devolve a musica de batalha ao terminar.
+            cueRef.current = audio.playCue('mus_caught', { resume: false });
             await wait(900 / animOptions.speed);
             break;
 
           case 'exp':
-            if (event.leveledUp) void audio.playJingle('mus_level_up');
+            if (event.leveledUp) audio.playJingle('mus_level_up');
             // So a barra do Pokemon que esta em campo muda na tela.
             if (battle.active('player').uid === event.uid) {
               patch('player', {
@@ -234,15 +267,12 @@ export function BattleScreen({
             return;
 
           case 'end':
-            if (event.outcome === 'win') {
-              void audio.playMusic(
-                battle.config.kind === 'trainer' ? 'mus_victory_trainer' : 'mus_victory_wild',
-                { loop: false },
-              );
-            }
             setFinished(event.outcome);
             busyRef.current = false;
             await wait(600 / animOptions.speed);
+            // Vitoria: a tela so sai depois do tema. Captura: quem espera o
+            // tema e a tela do Pokemon capturado, que abre em seguida.
+            if (event.outcome === 'win') await holdForMusic(cueRef.current);
             onFinish(event.outcome, battle.caught);
             return;
 
@@ -254,7 +284,7 @@ export function BattleScreen({
       busyRef.current = false;
       if (!battle.outcome) setMenu('main');
     },
-    [animOptions, battle, ctx, onFinish, patch],
+    [animOptions, battle, ctx, holdForMusic, onFinish, patch],
   );
 
   // Abertura: a cortina varre a tela antes do primeiro texto.
@@ -349,6 +379,16 @@ export function BattleScreen({
 
       <div className="battle-panel">
         <p className="battle-message">{message}</p>
+
+        {waitingMusic && (
+          <button
+            type="button"
+            className="battle-continue"
+            onClick={() => skipRef.current?.()}
+          >
+            Toque para continuar
+          </button>
+        )}
 
         {menu === 'main' && (
           <div className="battle-actions">
