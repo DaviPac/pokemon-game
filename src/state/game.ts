@@ -16,6 +16,7 @@ import type { Pokemon, PokemonContext } from '../game/pokemon/pokemon.js';
 import { healFully, speciesOf } from '../game/pokemon/pokemon.js';
 import { createNewSave, trainerXpForLevel, PARTY_LIMIT, type SaveData } from '../game/save/schema.js';
 import { loadSave, writeSave } from '../game/save/storage.js';
+import { APP_VERSION } from './updates.js';
 
 interface GameStore {
   ctx: PokemonContext | null;
@@ -62,6 +63,8 @@ export const useGame = create<GameStore>((set, get) => ({
 
   startNewGame: async (playerName, starter) => {
     const save = createNewSave(playerName);
+    // Quem esta comecando agora nao tem "novidades" para ler.
+    save.lastSeenVersion = APP_VERSION;
     save.party = [starter];
     save.seen = [starter.species];
     save.caught = [starter.species];

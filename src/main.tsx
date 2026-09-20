@@ -1,12 +1,13 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { registerSW } from 'virtual:pwa-register';
 import { audio } from './game/audio/index.js';
 import { applyAudioSettings } from './state/settings.js';
+import { initUpdates } from './state/updates.js';
 import { App } from './ui/App.js';
 import './styles.css';
 
-registerSW({ immediate: true });
+// Registra o service worker e passa a vigiar versoes novas.
+initUpdates();
 
 // Nenhum navegador toca som antes de um gesto: o primeiro toque libera o audio.
 const unlockAudio = () => {

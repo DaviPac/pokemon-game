@@ -2242,3 +2242,190 @@ select {
   border-radius: 50%;
   background: var(--accent);
 }
+
+/* ==========================================================================
+   Atualizacao e novidades
+   ========================================================================== */
+
+.update-banner {
+  position: absolute;
+  left: 12px;
+  right: 12px;
+  top: calc(var(--safe-top) + 12px);
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+  padding: 13px 15px;
+  border-radius: 16px;
+  background: rgba(22, 27, 37, 0.96);
+  backdrop-filter: blur(14px);
+  border: 1px solid var(--accent);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  animation: update-in 0.32s cubic-bezier(0.2, 0.9, 0.3, 1);
+}
+
+@keyframes update-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.update-text {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.update-title {
+  font-size: 14px;
+}
+
+.update-sub {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.update-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+/* Em tela larga cabe tudo numa linha so. */
+@media (min-width: 520px) {
+  .update-banner {
+    flex-direction: row;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .update-actions {
+    flex: 0 0 auto;
+  }
+}
+
+.update-later {
+  min-height: 40px;
+  padding: 0 14px;
+  border-radius: 11px;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 13px;
+}
+
+.update-now {
+  min-height: 40px;
+  padding: 0 20px;
+  border-radius: 11px;
+  border: none;
+  background: var(--accent);
+  color: #06111f;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.update-now:disabled,
+.update-later:disabled {
+  opacity: 0.6;
+}
+
+.patch-note {
+  padding: 14px 0 4px;
+  border-top: 1px solid var(--line);
+}
+
+.patch-note:first-of-type {
+  border-top: none;
+  padding-top: 4px;
+}
+
+.patch-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.patch-version {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.patch-date {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.patch-title {
+  margin: 4px 0 12px;
+  font-size: 17px;
+}
+
+.patch-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.patch-item {
+  display: flex;
+  gap: 9px;
+  align-items: flex-start;
+}
+
+.patch-tag {
+  flex: 0 0 auto;
+  min-width: 62px;
+  text-align: center;
+  padding: 3px 7px;
+  border-radius: 6px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: #06111f;
+}
+
+.patch-tag-novo {
+  background: #4cd964;
+}
+.patch-tag-melhoria {
+  background: #5ec8ff;
+}
+.patch-tag-correcao {
+  background: #ffcb3d;
+}
+
+.patch-change {
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.settings-message {
+  margin: 14px 0 0;
+  padding: 11px 13px;
+  border-radius: 12px;
+  background: rgba(79, 157, 255, 0.12);
+  border: 1px solid rgba(79, 157, 255, 0.3);
+  font-size: 13px;
+  line-height: 1.45;
+}

@@ -28,6 +28,7 @@ um clone novo ja roda com `npm install && npm run dev`.
 | `npm run build` | Typecheck + build de producao |
 | `npm run assets` | Pipeline completo de assets |
 | `npm run test` | Testes do motor de jogo (Vitest) |
+| `npm run test:update` | Testa o ciclo de atualizacao do PWA num navegador real |
 | `npm run typecheck` | Só o typecheck |
 
 ## Modos de locomocao
@@ -86,6 +87,24 @@ de audio do PokeAPI.
 
 Navegador nenhum toca som antes de um gesto do usuario, entao tudo comeca no
 primeiro toque. Volume de musica, de efeitos e o mudo ficam nas configuracoes.
+
+## Atualizacoes e seu progresso
+
+O jogo se atualiza sozinho. Quando sai uma versao nova, o app instalado percebe
+(na abertura, ao voltar do segundo plano ou a cada 30 minutos), avisa com um
+banner e troca de versao em um toque -- sem limpar cache e sem reinstalar. Depois
+da troca, uma tela mostra o que mudou desde a ultima vez que voce jogou.
+
+O save fica no IndexedDB, que nem a atualizacao nem o service worker tocam, e as
+migracoes so somam campos novos: nenhuma versao nova custa progresso. Ainda
+assim, limpar os dados do site pelo navegador apaga tudo, entao as configuracoes
+trazem **exportar backup** (gera um arquivo), **importar backup** e um pedido de
+armazenamento persistente ao navegador.
+
+`npm run test:update` verifica isso de ponta a ponta num navegador de verdade:
+instala uma versao, cria um save, publica outra por cima, confere que o aviso
+aparece sozinho, aplica a atualizacao e valida que o save continua intacto, que a
+versao nova esta mesmo rodando e que o jogo ainda abre offline.
 
 ## Aviso
 

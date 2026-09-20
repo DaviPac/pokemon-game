@@ -26,9 +26,13 @@ import { Profile } from './screens/Profile.js';
 import { SettingsSheet } from './screens/SettingsSheet.js';
 import { Shop } from './screens/Shop.js';
 import { Team } from './screens/Team.js';
+import { PatchNotes } from './screens/PatchNotes.js';
 import { TitleScreen } from './screens/TitleScreen.js';
 import { BottomNav, type Tab } from './shell/BottomNav.js';
 import { Dialogue } from './shell/Dialogue.js';
+import { UpdateBanner } from './shell/UpdateBanner.js';
+import { notesSince, type PatchNote } from '../data/patchNotes.js';
+import { APP_VERSION } from '../state/updates.js';
 
 /** Por onde o jogo esta passando: menu, abertura ou jogando. */
 type Stage = 'title' | 'intro' | 'playing';
@@ -51,6 +55,7 @@ export function App() {
   const [shopOpen, setShopOpen] = useState(false);
   const [battle, setBattle] = useState<PendingBattle | null>(null);
   const [events, setEvents] = useState<EventsFile | null>(null);
+  const [newNotes, setNewNotes] = useState<PatchNote[]>([]);
   const rngRef = useRef(new RNG());
   const battleRef = useRef<PendingBattle | null>(null);
   battleRef.current = battle;
@@ -68,6 +73,19 @@ export function App() {
       rolloverDaily(s);
     });
     // Roda uma vez por sessao.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [save !== null]);
+
+  // Depois de uma atualizacao, mostra o que mudou desde a ultima vez que este
+  // save foi aberto -- e so entao anota a versao nova.
+  useEffect(() => {
+    if (!save) return;
+    if (save.lastSeenVersion === APP_VERSION) return;
+    const pending = notesSince(save.lastSeenVersion, APP_VERSION);
+    if (pending.length > 0) setNewNotes(pending);
+    useGame.getState().update((s) => {
+      s.lastSeenVersion = APP_VERSION;
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [save !== null]);
 
@@ -268,6 +286,10 @@ export function App() {
           onSettings={() => setSettingsOpen(true)}
         />
         {settingsOpen && <SettingsSheet onClose={() => setSettingsOpen(false)} />}
+        {newNotes.length > 0 && (
+          <PatchNotes notes={newNotes} onClose={() => setNewNotes([])} />
+        )}
+        <UpdateBanner />
       </>
     );
   }
@@ -327,6 +349,9 @@ export function App() {
       {!battle && <BottomNav active={tab} onChange={setTab} badge={questBadge} />}
 
       {arriving && <div className="map-arrival" />}
+
+      {newNotes.length > 0 && <PatchNotes notes={newNotes} onClose={() => setNewNotes([])} />}
+      <UpdateBanner />
 
       {dialogue && (
         <Dialogue

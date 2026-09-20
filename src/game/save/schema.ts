@@ -42,6 +42,8 @@ export interface SaveData {
   createdAt: number;
   lastSeenAt: number;
   playtimeMs: number;
+  /** Versao do jogo na ultima vez que este save foi aberto. */
+  lastSeenVersion: string | null;
 
   playerName: string;
   money: number;
@@ -92,6 +94,7 @@ export function createNewSave(playerName: string): SaveData {
     createdAt: now,
     lastSeenAt: now,
     playtimeMs: 0,
+    lastSeenVersion: null,
 
     playerName,
     money: 3000,
@@ -129,16 +132,36 @@ export function createNewSave(playerName: string): SaveData {
   };
 }
 
-/** Migra saves de versoes anteriores; hoje so preenche campos novos. */
-export function migrate(save: SaveData): SaveData {
+/**
+ * Migra um save antigo para o formato atual.
+ *
+ * A regra e sempre somar, nunca descartar: campos novos ganham o valor padrao e
+ * tudo que o jogador ja tinha continua intacto. Assim uma atualizacao do app
+ * nunca custa progresso.
+ */
+export function migrate(save: Partial<SaveData>): SaveData {
   const base = createNewSave(save.playerName ?? 'Treinador');
   return {
     ...base,
     ...save,
-    visited: save.visited ?? base.visited,
+    // Estruturas aninhadas precisam de mesclagem explicita: um spread raso
+    // manteria o objeto antigo inteiro e perderia os campos novos.
+    position: { ...base.position, ...save.position },
+    respawn: { ...base.respawn, ...save.respawn },
     stats: { ...base.stats, ...save.stats },
     dailies: { ...base.dailies, ...save.dailies },
     bag: { ...save.bag },
+    party: save.party ?? base.party,
+    box: save.box ?? base.box,
+    seen: save.seen ?? base.seen,
+    caught: save.caught ?? base.caught,
+    visited: save.visited ?? base.visited,
+    badges: save.badges ?? base.badges,
+    flags: save.flags ?? base.flags,
+    expeditions: save.expeditions ?? base.expeditions,
+    eggs: save.eggs ?? base.eggs,
+    quests: save.quests ?? base.quests,
+    createdAt: save.createdAt ?? base.createdAt,
     version: SAVE_VERSION,
   };
 }
