@@ -100,6 +100,11 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         onChange={(v) => settings.set('vibration', v)}
       />
       <Toggle
+        label="Esconder a barra ao andar"
+        checked={settings.autoHideNav}
+        onChange={(v) => settings.set('autoHideNav', v)}
+      />
+      <Toggle
         label="Animacoes de batalha"
         checked={settings.battleAnimations}
         onChange={(v) => settings.set('battleAnimations', v)}

@@ -16,7 +16,7 @@ import {
 import type { PlayerPosition } from '../game/world/overworld.js';
 import { audio } from '../game/audio/index.js';
 import { shinyChanceFor, useGame } from '../state/game.js';
-import { haptic } from '../state/settings.js';
+import { haptic, useSettings } from '../state/settings.js';
 import { BattleScreen } from './battle/BattleScreen.js';
 import { CaughtScreen } from './battle/CaughtScreen.js';
 import { OverworldScreen, type TeleportRequest } from './overworld/OverworldScreen.js';
@@ -64,6 +64,10 @@ export function App() {
   const [battle, setBattle] = useState<PendingBattle | null>(null);
   const [captured, setCaptured] = useState<CaptureResult | null>(null);
   const [teleport, setTeleport] = useState<TeleportRequest | null>(null);
+  /** O jogador deu um passo ha pouco: a barra inferior se recolhe. */
+  const [walking, setWalking] = useState(false);
+  const walkTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const autoHideNav = useSettings((s) => s.autoHideNav);
   const [events, setEvents] = useState<EventsFile | null>(null);
   const [newNotes, setNewNotes] = useState<PatchNote[]>([]);
   const rngRef = useRef(new RNG());
@@ -247,6 +251,11 @@ export function App() {
   }, []);
 
   const handleStep = useCallback((steps: number) => {
+    // Andando, a barra inferior sai da frente e volta quando o jogador para.
+    setWalking(true);
+    if (walkTimer.current) clearTimeout(walkTimer.current);
+    walkTimer.current = setTimeout(() => setWalking(false), 1400);
+
     const state = useGame.getState();
     if (!state.ctx) return;
     state.update((s) => {
@@ -373,7 +382,14 @@ export function App() {
         />
       )}
 
-      {!battle && !captured && <BottomNav active={tab} onChange={setTab} badge={questBadge} />}
+      {!battle && !captured && (
+        <BottomNav
+          active={tab}
+          onChange={setTab}
+          badge={questBadge}
+          collapsed={walking && tab === 'map' && autoHideNav && !overlayOpen}
+        />
+      )}
 
       {arriving && <div className="map-arrival" />}
 

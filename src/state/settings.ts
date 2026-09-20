@@ -11,6 +11,8 @@ export interface Settings {
   /** Zoom do mapa: 0 = automatico pelo tamanho da tela. */
   zoom: number;
   vibration: boolean;
+  /** A barra inferior se recolhe enquanto o jogador anda pelo mapa. */
+  autoHideNav: boolean;
   fastAnimations: boolean;
   showGrid: boolean;
   battleAnimations: boolean;
@@ -29,6 +31,7 @@ export const useSettings = create<SettingsStore>()(
       muted: false,
       zoom: 0,
       vibration: true,
+      autoHideNav: true,
       fastAnimations: false,
       showGrid: false,
       battleAnimations: true,

@@ -243,6 +243,56 @@ async function main(): Promise<void> {
       (await page.evaluate(() => window.__audio?.state)) === 'running',
       `${await page.evaluate(() => window.__audio?.state)}`,
     );
+    // --- Barra inferior estilo Dock ----------------------------------------
+    console.log('\n8. barra inferior: vidro, lupa e recolher');
+    await page.locator('.nav-item', { hasText: 'Mapa' }).first().click();
+    // Pallet Town nao tem grama na porta de casa: da para andar sem encontro.
+    await teleport(page, 'MAP_PALLET_TOWN', 6, 8);
+    await page.waitForTimeout(2200);
+    check('barra a vista com o jogador parado', await isShown(page, '.dock'));
+
+    const dock = await page.locator('.dock').boundingBox();
+    if (dock) {
+      await page.mouse.move(dock.x + 30, dock.y + 28);
+      await page.waitForTimeout(400);
+      const zoom = await page.evaluate(() => {
+        const items = [...document.querySelectorAll<HTMLElement>('.dock-item')];
+        return items.map((item) => Number(item.style.getPropertyValue('--grow')));
+      });
+      check(
+        'icone cresce sob o dedo e os vizinhos nem tanto',
+        zoom[0] > 0.8 && zoom[1] < zoom[0] && zoom[4] < 0.05,
+        zoom.map((v) => v.toFixed(2)).join(' '),
+      );
+      check(
+        'so o icone apontado mostra o nome',
+        await page.evaluate(() => {
+          const labels = [...document.querySelectorAll<HTMLElement>('.dock-label')];
+          const visible = labels.filter((l) => Number(getComputedStyle(l).opacity) > 0.3);
+          return visible.length === 1 && visible[0].textContent === 'Pokedex';
+        }),
+      );
+      await shot('08-barra-com-lupa');
+      await page.mouse.move(5, 5);
+      await page.waitForTimeout(300);
+    }
+
+    await page.keyboard.down('ArrowLeft');
+    await page.waitForTimeout(1600);
+    await page.keyboard.up('ArrowLeft');
+    check('barra recolhe enquanto anda', !(await isShown(page, '.dock')));
+    check('sobra o risquinho na beirada', (await page.locator('.dock-handle').count()) === 1);
+    await shot('09-barra-recolhida');
+
+    await page.locator('.dock-handle').click();
+    await page.waitForTimeout(600);
+    check('o risquinho traz a barra de volta', await isShown(page, '.dock'));
+
+    await page.keyboard.down('ArrowRight');
+    await page.waitForTimeout(1500);
+    await page.keyboard.up('ArrowRight');
+    await page.waitForTimeout(2200);
+    check('barra volta sozinha quando o jogador para', await isShown(page, '.dock'));
   } finally {
     await browser.close();
   }
@@ -250,7 +300,7 @@ async function main(): Promise<void> {
   // --- Grade sem costura ----------------------------------------------------
   // Numa densidade quebrada (2,75x e comum no Android) a escala fracionada
   // deixava uma linha do fundo entre um tile e outro.
-  console.log('\n8. mapa sem linha entre os tiles');
+  console.log('\n9. mapa sem linha entre os tiles');
   failures += await checkPixelGrid(url, outDir);
 
   if (errors.length > 0) {
@@ -367,6 +417,18 @@ async function checkPixelGrid(url: string, outDir: string): Promise<number> {
   } finally {
     await browser.close();
   }
+}
+
+/** True quando o elemento esta na tela, e nao recolhido para fora dela. */
+async function isShown(page: Page, selector: string): Promise<boolean> {
+  return page.evaluate((css) => {
+    const element = document.querySelector(css);
+    if (!element) return false;
+    const rect = element.getBoundingClientRect();
+    return (
+      Number(getComputedStyle(element).opacity) > 0.5 && rect.bottom <= window.innerHeight + 2
+    );
+  }, selector);
 }
 
 /** True quando o elemento recebe o clique -- e nao algo por cima dele. */

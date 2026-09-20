@@ -17,6 +17,29 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.4.0',
+    date: '2026-09-20',
+    title: 'Barra inferior de vidro',
+    changes: [
+      {
+        kind: 'novo',
+        text: 'A barra inferior virou uma ilha de vidro flutuando sobre o jogo, no espirito do Dock do Mac e do iPad: o mapa passa desfocado por tras e a luz corre na borda conforme o dedo anda.',
+      },
+      {
+        kind: 'novo',
+        text: 'O icone sob o dedo cresce e os vizinhos abrem espaco, com o nome aparecendo so em quem cresceu.',
+      },
+      {
+        kind: 'novo',
+        text: 'Andando pelo mapa, a barra se recolhe e deixa so um risquinho na beirada; um toque ali, ou parar de andar, traz ela de volta. Da para desligar isso nas configuracoes.',
+      },
+      {
+        kind: 'melhoria',
+        text: 'Icones proprios, desenhados em vetor: a Pokedex, a Pokebola da equipe, o alfinete do mapa, a mochila e o treinador.',
+      },
+    ],
+  },
+  {
     version: '0.3.2',
     date: '2026-09-20',
     title: 'Derrota, silencio e pixels no lugar',
