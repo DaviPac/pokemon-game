@@ -614,3 +614,590 @@ select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ==========================================================================
+   Batalha
+   ========================================================================== */
+
+.boot-screen {
+  height: 100dvh;
+  display: grid;
+  place-items: center;
+  color: var(--text-dim);
+}
+
+.battle {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg);
+}
+
+.battle-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  padding-top: var(--safe-top);
+}
+
+.battle-bg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(120% 70% at 50% 8%, #7fc7ff 0%, #5aa7e8 38%, transparent 70%),
+    linear-gradient(to bottom, #6fbcf0 0%, #8fd6a0 52%, #64b874 100%);
+}
+
+/* O cenario acompanha onde o encontro aconteceu. */
+.battle-bg-water {
+  background:
+    radial-gradient(120% 70% at 50% 8%, #9fd8ff 0%, #4f93d8 40%, transparent 72%),
+    linear-gradient(to bottom, #5fa8e8 0%, #3f7fc0 55%, #2f5f98 100%);
+}
+
+.battle-bg-cave {
+  background:
+    radial-gradient(120% 70% at 50% 6%, #5a5348 0%, #3b372f 42%, transparent 72%),
+    linear-gradient(to bottom, #4a453c 0%, #6b6252 55%, #574f42 100%);
+}
+
+.battle-slot {
+  position: absolute;
+  display: grid;
+  place-items: center;
+}
+
+.battle-slot-foe {
+  top: 15%;
+  right: 9%;
+  width: 34%;
+}
+
+.battle-slot-player {
+  /* Acima do card de HP: os dois nunca se cobrem, mesmo num sprite grande. */
+  bottom: 20%;
+  left: 5%;
+  width: 42%;
+}
+
+.battle-sprite {
+  image-rendering: pixelated;
+  transform-origin: center bottom;
+  filter: drop-shadow(0 4px 2px rgba(0, 0, 0, 0.28));
+  z-index: 1;
+}
+
+.battle-sprite-foe {
+  width: clamp(84px, 29vw, 146px);
+}
+
+.battle-sprite-player {
+  width: clamp(104px, 36vw, 178px);
+}
+
+.battle-shadow {
+  position: absolute;
+  bottom: -6px;
+  width: 62%;
+  height: 12px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.2);
+  filter: blur(3px);
+}
+
+.battle-hud {
+  position: absolute;
+  z-index: 2;
+}
+
+.battle-hud-foe {
+  top: calc(var(--safe-top) + 14px);
+  left: 12px;
+  width: min(62%, 280px);
+}
+
+.battle-hud-player {
+  bottom: 12px;
+  right: 12px;
+  width: min(62%, 268px);
+}
+
+.hp-card {
+  padding: 9px 12px;
+  border-radius: 14px;
+  background: rgba(13, 17, 23, 0.78);
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+}
+
+.hp-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.hp-name {
+  font-size: 14px;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.shiny-star {
+  color: var(--accent-warm);
+  font-size: 12px;
+}
+
+.gender {
+  font-size: 13px;
+}
+.male {
+  color: #6aa9ff;
+}
+.female {
+  color: #ff7fae;
+}
+
+.hp-level {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.hp-track {
+  height: 7px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+}
+
+.hp-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.45s cubic-bezier(0.3, 0.8, 0.4, 1), background 0.3s;
+}
+
+.hp-foot {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+  min-height: 14px;
+}
+
+.status-chip {
+  padding: 1px 6px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 0.4px;
+  color: #10131a;
+}
+
+.exp-track {
+  flex: 1;
+  height: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+
+.exp-fill {
+  height: 100%;
+  background: #5ec8ff;
+  transition: width 0.5s ease;
+}
+
+.hp-numbers {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.battle-party-dots {
+  position: absolute;
+  top: calc(var(--safe-top) + 14px);
+  right: 14px;
+  display: flex;
+  gap: 5px;
+  z-index: 2;
+}
+
+.party-dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: #4cd964;
+  border: 1px solid rgba(0, 0, 0, 0.35);
+}
+
+.party-dot-out {
+  background: #6b727d;
+}
+
+.party-dot-active {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.6);
+}
+
+/* Efeitos das animacoes de golpe */
+
+.fx-orb,
+.fx-particle,
+.fx-ball {
+  position: absolute;
+  pointer-events: none;
+  z-index: 5;
+}
+
+.fx-orb {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+}
+
+.fx-particle {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+}
+
+.fx-ball {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  /* Uma Poke Ball desenhada em CSS: forma, nao sprite. */
+  background:
+    radial-gradient(circle at 50% 50%, #f5f5f5 0 22%, #2a2a2a 22% 30%, transparent 30%),
+    linear-gradient(to bottom, #ee3d3d 0 46%, #2a2a2a 46% 54%, #f5f5f5 54% 100%);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+}
+
+/* Painel de acoes */
+
+.battle-panel {
+  flex: 0 0 auto;
+  min-height: 34%;
+  padding: 14px 16px calc(var(--safe-bottom) + 16px);
+  background: var(--bg-elevated);
+  border-top: 1px solid var(--line);
+  border-radius: 20px 20px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.battle-message {
+  margin: 0;
+  min-height: 42px;
+  font-size: 15px;
+  line-height: 1.45;
+}
+
+.battle-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.battle-action {
+  min-height: 58px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-sheet);
+  font-size: 16px;
+  font-weight: 700;
+}
+
+.battle-action:active {
+  transform: scale(0.97);
+}
+
+.action-fight {
+  background: #d1483f;
+  border-color: #e0685f;
+}
+.action-bag {
+  background: #2f6fd0;
+  border-color: #4f8fe0;
+}
+.action-party {
+  background: #3f9a5a;
+  border-color: #5fba7a;
+}
+.action-run {
+  background: #6a5f7a;
+  border-color: #8a7f9a;
+}
+
+.move-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.move-button {
+  min-height: 70px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 2px solid var(--line);
+  background: var(--bg-sheet);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  text-align: left;
+}
+
+.move-button:disabled {
+  opacity: 0.45;
+}
+
+.move-name {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.move-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+
+.type-chip {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #10131a;
+  letter-spacing: 0.3px;
+}
+
+.move-pp {
+  font-variant-numeric: tabular-nums;
+}
+
+.back-button {
+  grid-column: 1 / -1;
+  min-height: 46px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.bag-list,
+.party-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 46vh;
+  overflow-y: auto;
+  touch-action: pan-y;
+}
+
+.bag-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 52px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-sheet);
+  font-size: 15px;
+}
+
+.bag-item-count {
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.party-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 62px;
+  padding: 6px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-sheet);
+  text-align: left;
+}
+
+.party-row:disabled {
+  opacity: 0.45;
+}
+
+.party-icon {
+  width: 48px;
+  height: 48px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.party-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.party-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.party-hp {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ==========================================================================
+   Novo jogo
+   ========================================================================== */
+
+.newgame {
+  height: 100dvh;
+  overflow-y: auto;
+  touch-action: pan-y;
+  padding: calc(var(--safe-top) + 28px) 20px calc(var(--safe-bottom) + 24px);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  background:
+    radial-gradient(90% 50% at 50% 0%, rgba(79, 157, 255, 0.18), transparent 70%), var(--bg);
+}
+
+.newgame-head {
+  text-align: center;
+  margin-bottom: 8px;
+}
+
+.newgame-title {
+  margin: 0;
+  font-size: 32px;
+  letter-spacing: -0.5px;
+}
+
+.newgame-sub {
+  margin: 6px 0 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.newgame-section {
+  margin-top: 18px;
+}
+
+.newgame-label {
+  display: block;
+  margin: 0 0 10px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.9px;
+  color: var(--text-dim);
+}
+
+.newgame-input {
+  width: 100%;
+  min-height: 52px;
+  padding: 0 16px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 16px;
+}
+
+.starter-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.starter-card {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  grid-template-areas:
+    'art name'
+    'art types'
+    'art blurb';
+  gap: 4px 14px;
+  align-items: center;
+  padding: 12px;
+  border-radius: 16px;
+  border: 2px solid var(--line);
+  background: var(--bg-elevated);
+  text-align: left;
+}
+
+.starter-card-active {
+  background: rgba(79, 157, 255, 0.1);
+}
+
+.starter-art {
+  grid-area: art;
+  width: 84px;
+  height: 84px;
+  object-fit: contain;
+}
+
+.starter-name {
+  grid-area: name;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.starter-types {
+  grid-area: types;
+  display: flex;
+  gap: 5px;
+}
+
+.starter-blurb {
+  grid-area: blurb;
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.4;
+}
+
+.primary-button {
+  margin-top: 24px;
+  min-height: 56px;
+  border-radius: 16px;
+  border: none;
+  background: var(--accent);
+  color: #06111f;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.primary-button:disabled {
+  background: var(--line);
+  color: var(--text-dim);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+@media (min-width: 720px) {
+  .newgame,
+  .battle-panel {
+    max-width: 640px;
+    margin: 0 auto;
+  }
+}
