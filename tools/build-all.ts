@@ -10,6 +10,7 @@ const steps = [
   'tools/build-overworld.ts',
   // Depende dos mapas ja convertidos e do species.json.
   'tools/build-events.ts',
+  'tools/build-icons.ts',
 ];
 
 for (const step of steps) {
