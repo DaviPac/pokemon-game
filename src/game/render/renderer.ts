@@ -76,7 +76,9 @@ export class OverworldRenderer {
   ): void {
     const { scale } = camera;
     ctx.imageSmoothingEnabled = false;
-    ctx.fillStyle = '#000';
+    // Interiores sao menores que uma tela de celular em retrato; o que sobra
+    // recebe o fundo do app, nao um preto chapado.
+    ctx.fillStyle = '#0a0d12';
     ctx.fillRect(0, 0, viewWidth, viewHeight);
 
     // Canto superior esquerdo da area visivel, em pixels do mundo.
@@ -143,6 +145,16 @@ export class OverworldRenderer {
 
     actors.sort((a, b) => a.y - b.y);
     for (const actor of actors) actor.draw();
+
+    // Contorno do mapa quando ele nao preenche a tela: deixa claro que o vazio
+    // e o limite do comodo, e nao uma falha de carregamento.
+    const mapPixelWidth = world.map.width * TILE;
+    const mapPixelHeight = world.map.height * TILE;
+    if (mapPixelWidth * scale < viewWidth || mapPixelHeight * scale < viewHeight) {
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.07)';
+      ctx.lineWidth = 1 / scale;
+      ctx.strokeRect(0, 0, mapPixelWidth, mapPixelHeight);
+    }
 
     ctx.restore();
   }

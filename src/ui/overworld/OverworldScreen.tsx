@@ -2,11 +2,12 @@
  * Tela do mapa: canvas, loop de jogo e a cola entre os controles e o motor.
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { loadOverworldSprites } from '../../game/data/assets.js';
+import { loadMap, loadOverworldSprites } from '../../game/data/assets.js';
 import type { Direction } from '../../game/data/types.js';
 import { InputBus } from '../../game/input/InputBus.js';
 import { OverworldRenderer } from '../../game/render/renderer.js';
-import { Overworld } from '../../game/world/overworld.js';
+import { Overworld, type PlayerPosition } from '../../game/world/overworld.js';
+import { resolveInteraction, type EventsFile, type Interaction } from '../../game/world/interactions.js';
 import { findPath } from '../../game/world/pathfinding.js';
 import { TILE, World, directionDelta } from '../../game/world/world.js';
 import { RNG } from '../../game/core/rng.js';
@@ -19,20 +20,25 @@ import { mapDisplayName } from '../../i18n/places.js';
 const TARGET_TILES_ACROSS = 11;
 
 interface Props {
-  startMap: string;
-  startX: number;
-  startY: number;
+  start: PlayerPosition;
+  events: EventsFile | null;
+  /** Congela o jogo enquanto uma tela por cima esta aberta. */
+  paused: boolean;
   onEncounter: (kind: 'land' | 'water', mapId: string) => void;
-  onInteract: (message: string) => void;
+  onInteract: (interaction: Interaction) => void;
+  onPosition: (position: PlayerPosition) => void;
+  onStep: (steps: number) => void;
   onMenu: () => void;
 }
 
 export function OverworldScreen({
-  startMap,
-  startX,
-  startY,
+  start,
+  events,
+  paused,
   onEncounter,
   onInteract,
+  onPosition,
+  onStep,
   onMenu,
 }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -41,20 +47,22 @@ export function OverworldScreen({
   const rendererRef = useRef(new OverworldRenderer());
   const [ready, setReady] = useState(false);
   const [mapName, setMapName] = useState('');
+  const [fading, setFading] = useState(false);
   const movementMode = useSettings((s) => s.movementMode);
   const zoomSetting = useSettings((s) => s.zoom);
 
-  const onEncounterRef = useRef(onEncounter);
-  const onInteractRef = useRef(onInteract);
-  onEncounterRef.current = onEncounter;
-  onInteractRef.current = onInteract;
+  // Callbacks em refs: o loop nao deve ser recriado quando o App re-renderiza.
+  const callbacks = useRef({ onEncounter, onInteract, onPosition, onStep, events });
+  callbacks.current = { onEncounter, onInteract, onPosition, onStep, events };
+  const pausedRef = useRef(paused);
+  pausedRef.current = paused;
 
   // --- Inicializacao --------------------------------------------------------
   useEffect(() => {
     let cancelled = false;
     (async () => {
       const [world, spriteMeta] = await Promise.all([
-        World.load(startMap),
+        World.load(start.map),
         loadOverworldSprites(),
       ]);
       if (cancelled) return;
@@ -63,31 +71,69 @@ export function OverworldScreen({
       renderer.setSpriteMeta(spriteMeta);
       await renderer.preload(world);
 
-      const overworld = new Overworld(world, { x: startX, y: startY }, new RNG());
+      const overworld = new Overworld(
+        world,
+        { x: start.x, y: start.y, dir: start.dir },
+        new RNG(),
+      );
+
+      const refreshSprites = () => {
+        void renderer.preload(overworld.world);
+        void renderer.preloadSprites(overworld.npcs.map((n) => n.data.gfx));
+      };
+
       overworld.events = {
         onEncounter: (kind) => {
           haptic([18, 40, 18]);
-          onEncounterRef.current(kind, overworld.world.map.id);
+          callbacks.current.onEncounter(kind, overworld.world.map.id);
         },
         onMapChange: (map) => {
           setMapName(mapDisplayName(map));
-          void renderer.preload(overworld.world);
-          void renderer.preloadSprites(overworld.npcs.map((n) => n.data.gfx));
+          refreshSprites();
+          callbacks.current.onPosition(overworld.position());
+        },
+        onStep: (steps) => {
+          callbacks.current.onStep(steps);
+          // Guardar a posicao a cada passo seria exagero; de dez em dez basta.
+          if (steps % 10 === 0) callbacks.current.onPosition(overworld.position());
+        },
+        onWarp: (dest, warpId) => {
+          void enterWarp(overworld, dest, warpId, setFading, () => {
+            setMapName(mapDisplayName(overworld.world.map));
+            refreshSprites();
+            callbacks.current.onPosition(overworld.position());
+          });
         },
       };
+
       await renderer.preloadSprites([
         'OBJ_EVENT_GFX_RED_NORMAL',
         ...overworld.npcs.map((n) => n.data.gfx),
       ]);
 
       overworldRef.current = overworld;
+      // Em desenvolvimento, os scripts de teste usam isto para posicionar o
+      // jogador sem depender de segurar setas por um tempo exato.
+      if (import.meta.env.DEV) {
+        (window as unknown as { __overworld?: Overworld }).__overworld = overworld;
+      }
       setMapName(mapDisplayName(world.map));
       setReady(true);
     })();
     return () => {
       cancelled = true;
     };
-  }, [startMap, startX, startY]);
+    // Apenas o mapa inicial importa: depois disso o motor cuida das trocas.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // --- Pausa ----------------------------------------------------------------
+  useEffect(() => {
+    const overworld = overworldRef.current;
+    if (!overworld) return;
+    overworld.paused = paused;
+    if (paused) busRef.current.clear();
+  }, [paused, ready]);
 
   // --- Loop -----------------------------------------------------------------
   useEffect(() => {
@@ -117,23 +163,42 @@ export function OverworldScreen({
       const dt = Math.min(60, now - last);
       last = now;
 
-      consumePath(overworld, bus);
-      overworld.setIntent({ dir: bus.dir, running: bus.running });
-
-      const action = bus.takeAction();
-      if (action === 'a') interact(overworld, onInteractRef.current);
+      if (!overworld.paused) {
+        consumePath(overworld, bus);
+        overworld.setIntent({ dir: bus.dir, running: bus.running });
+        if (bus.takeAction() === 'a') {
+          const interaction = resolveInteraction(overworld, callbacks.current.events);
+          if (interaction) {
+            faceNpc(overworld, interaction);
+            haptic(12);
+            callbacks.current.onInteract(interaction);
+          }
+        }
+      }
 
       overworld.update(dt);
 
       const player = overworld.player;
-      const px = (player.fromX + (player.x - player.fromX) * player.progress) * TILE + TILE / 2;
-      const py = (player.fromY + (player.y - player.fromY) * player.progress) * TILE + TILE / 2;
+      let px = (player.fromX + (player.x - player.fromX) * player.progress) * TILE + TILE / 2;
+      let py = (player.fromY + (player.y - player.fromY) * player.progress) * TILE + TILE / 2;
       const dpr = canvas.width / Math.max(1, canvas.getBoundingClientRect().width);
       const cssWidth = canvas.width / dpr;
-      const scale =
+      let scale =
         (zoomSetting > 0
           ? zoomSetting
           : clamp(Math.round(cssWidth / (TILE * TARGET_TILES_ACROSS)), 2, 6)) * dpr;
+
+      // Mapas pequenos (interiores) ficam centralizados e ampliados ate
+      // preencher a largura, em vez de mostrar o vazio alem da borda.
+      const map = overworld.world.map;
+      const mapPixelWidth = map.width * TILE;
+      if (mapPixelWidth * scale < canvas.width) {
+        scale = Math.min(8 * dpr, Math.ceil(canvas.width / mapPixelWidth));
+      }
+      const halfW = canvas.width / (2 * scale);
+      const halfH = canvas.height / (2 * scale);
+      if (map.width * TILE <= halfW * 2) px = (map.width * TILE) / 2;
+      if (map.height * TILE <= halfH * 2) py = (map.height * TILE) / 2;
 
       renderer.draw(
         ctx,
@@ -192,8 +257,11 @@ export function OverworldScreen({
     };
     const down = (e: KeyboardEvent) => {
       if (e.repeat) return;
+      // Com um dialogo ou menu aberto, a tecla e daquela tela: se o botao
+      // ficasse na fila, fechar a caixa reabriria a conversa na hora.
+      if (pausedRef.current) return;
       if (e.key === 'z' || e.key === 'Z' || e.key === 'Enter') bus.press('a');
-      if (e.key === 'x' || e.key === 'X' || e.key === 'Escape') bus.press('b');
+      if (e.key === 'x' || e.key === 'X') bus.press('b');
       keys.add(e.key === 'Shift' ? 'Shift' : e.key);
       if (dirOf(e.key)) e.preventDefault();
       refresh();
@@ -219,22 +287,23 @@ export function OverworldScreen({
   // --- Toque para caminhar --------------------------------------------------
   const handleTap = useCallback(
     (e: React.PointerEvent<HTMLCanvasElement>) => {
-      if (movementMode !== 'touch') return;
+      if (movementMode !== 'touch' || paused) return;
       const overworld = overworldRef.current;
       const canvas = canvasRef.current;
       if (!overworld || !canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const dpr = canvas.width / rect.width;
       const scale =
-        (zoomSetting > 0 ? zoomSetting : clamp(Math.round(rect.width / (TILE * TARGET_TILES_ACROSS)), 2, 6));
+        zoomSetting > 0
+          ? zoomSetting
+          : clamp(Math.round(rect.width / (TILE * TARGET_TILES_ACROSS)), 2, 6);
 
+      // O jogador esta sempre no centro da tela; o resto e aritmetica de tiles.
       const player = overworld.player;
-      const centerX = (e.clientX - rect.left - rect.width / 2) / scale;
-      const centerY = (e.clientY - rect.top - rect.height / 2) / scale;
-      const targetX = Math.floor(player.x + 0.5 + centerX / TILE);
-      const targetY = Math.floor(player.y + 0.5 + centerY / TILE);
-      void dpr;
+      const offsetX = (e.clientX - rect.left - rect.width / 2) / scale;
+      const offsetY = (e.clientY - rect.top - rect.height / 2) / scale;
+      const targetX = Math.floor(player.x + 0.5 + offsetX / TILE);
+      const targetY = Math.floor(player.y + 0.5 + offsetY / TILE);
 
       const path = findPath(overworld, { x: player.x, y: player.y }, { x: targetX, y: targetY });
       if (path && path.length > 0) {
@@ -244,7 +313,7 @@ export function OverworldScreen({
         haptic([4, 30, 4]);
       }
     },
-    [movementMode, zoomSetting],
+    [movementMode, paused, zoomSetting],
   );
 
   const dual = movementMode === 'oldschool-dual';
@@ -256,6 +325,7 @@ export function OverworldScreen({
         <div className="map-banner">{mapName}</div>
         {!ready && <div className="loading-overlay">Carregando Kanto…</div>}
         {ready && !dual && <Controls bus={busRef.current} mode={movementMode} onMenu={onMenu} />}
+        <div className={fading ? 'warp-fade warp-fade-on' : 'warp-fade'} />
       </div>
       {dual && (
         <GbcScreen
@@ -267,6 +337,46 @@ export function OverworldScreen({
       )}
     </div>
   );
+}
+
+/**
+ * Entra num warp: o destino guarda a lista de warps, e o indice diz em qual
+ * deles o jogador aparece do outro lado.
+ */
+async function enterWarp(
+  overworld: Overworld,
+  dest: string,
+  warpId: number,
+  setFading: (value: boolean) => void,
+  onArrive: () => void,
+): Promise<void> {
+  overworld.paused = true;
+  setFading(true);
+  haptic(12);
+  await new Promise((resolve) => setTimeout(resolve, 220));
+
+  try {
+    const map = await loadMap(dest);
+    const warp = map.warps[warpId] ?? map.warps[0];
+    const x = warp?.x ?? Math.floor(map.width / 2);
+    const y = warp?.y ?? Math.floor(map.height / 2);
+    await overworld.arriveFromWarp(dest, x, y, 'down');
+    // Como no jogo original, o jogador da um passo para fora da porta.
+    overworld.stepOutOfDoor();
+    onArrive();
+  } catch {
+    // Destino inexistente (alguns warps do decomp apontam para fora de Kanto).
+  } finally {
+    overworld.paused = false;
+    setFading(false);
+  }
+}
+
+/** O NPC vira para o jogador antes de falar. */
+function faceNpc(overworld: Overworld, interaction: Interaction): void {
+  if (!interaction || !('npc' in interaction)) return;
+  const { dx, dy } = directionDelta(overworld.player.dir);
+  interaction.npc.dir = dx === 1 ? 'left' : dx === -1 ? 'right' : dy === 1 ? 'up' : 'down';
 }
 
 /** Converte o caminho pendente do modo toque em intencao de movimento. */
@@ -299,31 +409,6 @@ function consumePath(overworld: Overworld, bus: InputBus): void {
   }
   bus.dir = dir;
   bus.running = path.length > 3;
-}
-
-function interact(overworld: Overworld, onInteract: (message: string) => void): void {
-  const facing = overworld.facingTile();
-  const npc = overworld.npcAt(facing.x, facing.y);
-  if (npc) {
-    // Vira para o jogador antes de falar.
-    const { dx, dy } = directionDelta(overworld.player.dir);
-    npc.dir = dx === 1 ? 'left' : dx === -1 ? 'right' : dy === 1 ? 'up' : 'down';
-    onInteract(describeNpc(npc.data.gfx, npc.data.trainer));
-    haptic(12);
-    return;
-  }
-  const tile = overworld.world.tileAt(facing.x, facing.y);
-  if (tile.behavior === 'sign') {
-    onInteract('Uma placa. As letras estao meio apagadas pelo tempo.');
-    haptic(8);
-  }
-}
-
-function describeNpc(gfx: string, trainer: boolean): string {
-  if (trainer) return 'Esse treinador parece pronto para uma batalha.';
-  if (gfx.includes('WOMAN') || gfx.includes('GIRL')) return 'Bom dia! Bonito tempo para viajar, nao acha?';
-  if (gfx.includes('MAN') || gfx.includes('BOY')) return 'Dizem que na grama alta aparecem Pokemon selvagens.';
-  return 'Ola!';
 }
 
 function clamp(value: number, min: number, max: number): number {

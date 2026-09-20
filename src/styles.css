@@ -395,9 +395,11 @@ select {
 .dialogue-layer {
   position: absolute;
   inset: 0;
+  z-index: 30;
   display: flex;
   align-items: flex-end;
-  padding: 0 calc(var(--safe-left) + 12px) calc(var(--safe-bottom) + 16px)
+  /* Acima da navegacao inferior, para a fala nunca ficar atras dela. */
+  padding: 0 calc(var(--safe-left) + 12px) calc(var(--safe-bottom) + 96px)
     calc(var(--safe-right) + 12px);
   background: linear-gradient(to top, rgba(0, 0, 0, 0.35), transparent 45%);
 }
@@ -1200,4 +1202,672 @@ select {
     max-width: 640px;
     margin: 0 auto;
   }
+}
+
+/* ==========================================================================
+   Casca do app: navegacao inferior e telas de lista
+   ========================================================================== */
+
+.layer {
+  position: absolute;
+  inset: 0;
+}
+
+.layer-hidden {
+  /* Fica montado (voltar ao mapa e instantaneo), mas invisivel e inerte. */
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.bottom-nav {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  align-items: end;
+  gap: 2px;
+  padding: 8px 8px calc(var(--safe-bottom) + 8px);
+  background: rgba(13, 17, 23, 0.9);
+  backdrop-filter: blur(16px);
+  border-top: 1px solid var(--line);
+}
+
+.nav-item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  padding: 7px 2px;
+  border: none;
+  background: none;
+  color: var(--text-dim);
+  border-radius: 12px;
+}
+
+.nav-item-active {
+  color: var(--accent);
+}
+
+.nav-icon {
+  font-size: 19px;
+  line-height: 1;
+}
+
+.nav-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.2px;
+}
+
+.nav-item-center {
+  margin-bottom: 6px;
+  padding: 14px 2px 9px;
+  background: linear-gradient(160deg, #5aa9ff, #2f6fd0);
+  color: #06111f;
+  box-shadow: 0 6px 18px rgba(47, 111, 208, 0.42);
+  border-radius: 18px;
+}
+
+.nav-item-center .nav-icon {
+  font-size: 22px;
+}
+
+.nav-badge {
+  position: absolute;
+  top: 5px;
+  right: 50%;
+  transform: translateX(16px);
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
+/* Telas de lista (Pokedex, Equipe, Mochila, Perfil) */
+
+.screen {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  touch-action: pan-y;
+  overscroll-behavior: contain;
+  padding: calc(var(--safe-top) + 20px) 16px 104px;
+  background: var(--bg);
+}
+
+.screen-head {
+  margin-bottom: 14px;
+}
+
+.screen-title {
+  margin: 0;
+  font-size: 26px;
+  letter-spacing: -0.4px;
+}
+
+.screen-sub {
+  margin: 4px 0 0;
+  color: var(--text-dim);
+  font-size: 14px;
+}
+
+.screen-note {
+  margin: 0 0 10px;
+  color: var(--text-dim);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.screen-footnote {
+  margin: 22px 0 0;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 12px;
+}
+
+.paragraph {
+  margin: 0 0 12px;
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--text-dim);
+}
+
+.search-input {
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  margin-bottom: 12px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-size: 15px;
+}
+
+.chip-row {
+  display: flex;
+  gap: 7px;
+  overflow-x: auto;
+  padding-bottom: 4px;
+  touch-action: pan-x;
+  scrollbar-width: none;
+}
+
+.chip-row::-webkit-scrollbar {
+  display: none;
+}
+
+.chip-row-wrap {
+  flex-wrap: wrap;
+  overflow: visible;
+}
+
+.chip {
+  flex: 0 0 auto;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.chip-active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #06111f;
+}
+
+/* Pokedex */
+
+.dex-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(88px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.dex-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 4px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+}
+
+.dex-cell-caught {
+  border-color: rgba(79, 157, 255, 0.55);
+  background: rgba(79, 157, 255, 0.09);
+}
+
+.dex-icon {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  image-rendering: pixelated;
+}
+
+.dex-icon-unknown {
+  filter: brightness(0) opacity(0.35);
+}
+
+.dex-number {
+  font-size: 10px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.dex-name {
+  font-size: 11px;
+  font-weight: 600;
+  text-align: center;
+  line-height: 1.2;
+}
+
+.dex-hero {
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.dex-art {
+  width: 118px;
+  height: 118px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.dex-hero-info {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.dex-hero-number {
+  font-size: 13px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.dex-hero-meta {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.stat-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.stat-row {
+  display: grid;
+  grid-template-columns: 78px 1fr 38px;
+  align-items: center;
+  gap: 9px;
+  font-size: 12px;
+}
+
+.stat-label {
+  color: var(--text-dim);
+}
+
+.stat-track {
+  height: 6px;
+  border-radius: 3px;
+  background: var(--line);
+  overflow: hidden;
+}
+
+.stat-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #4f9dff, #5ec8ff);
+}
+
+.stat-value {
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Equipe */
+
+.mon-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mon-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  text-align: left;
+}
+
+.mon-card-active {
+  border-color: var(--accent);
+  background: rgba(79, 157, 255, 0.12);
+}
+
+.mon-icon {
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
+  image-rendering: pixelated;
+  flex: 0 0 auto;
+}
+
+.mon-icon-small {
+  width: 38px;
+  height: 38px;
+}
+
+.mon-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.mon-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.mon-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mon-level {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.mon-meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.move-list {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.move-row {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+}
+
+.sheet-actions {
+  margin-top: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.secondary-button {
+  min-height: 50px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+/* Mochila e loja */
+
+.item-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.item-row,
+.shop-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  text-align: left;
+}
+
+.item-row:disabled {
+  opacity: 0.6;
+}
+
+.item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.item-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.item-desc {
+  font-size: 12px;
+  color: var(--text-dim);
+  line-height: 1.35;
+}
+
+.item-price {
+  font-size: 12px;
+  color: var(--accent-warm);
+  font-variant-numeric: tabular-nums;
+}
+
+.item-count {
+  font-size: 14px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.shop-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: flex-end;
+}
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-variant-numeric: tabular-nums;
+}
+
+.stepper button {
+  width: 32px;
+  height: 32px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: var(--bg-sheet);
+  font-size: 17px;
+}
+
+.stepper span {
+  min-width: 26px;
+  text-align: center;
+  font-size: 14px;
+}
+
+.buy-button {
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 11px;
+  border: none;
+  background: var(--accent);
+  color: #06111f;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.buy-button:disabled {
+  background: var(--line);
+  color: var(--text-dim);
+}
+
+/* Perfil */
+
+.exp-track-wide {
+  height: 7px;
+  margin-top: 10px;
+}
+
+.stat-cards {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 7px;
+  margin-bottom: 6px;
+}
+
+.stat-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 12px 4px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+}
+
+.stat-card-value {
+  font-size: 17px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat-card-label {
+  font-size: 10px;
+  color: var(--text-dim);
+  text-align: center;
+}
+
+.expedition-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.expedition {
+  padding: 14px;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.expedition-ready {
+  border-color: var(--accent);
+  background: rgba(79, 157, 255, 0.1);
+}
+
+.expedition-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.expedition-place {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.expedition-time {
+  font-size: 13px;
+  color: var(--text-dim);
+}
+
+.expedition-team {
+  display: flex;
+  gap: 4px;
+}
+
+.expedition .primary-button {
+  margin-top: 0;
+  min-height: 46px;
+  font-size: 15px;
+}
+
+.expedition-add {
+  min-height: 56px;
+  border-radius: 16px;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.quest-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.quest {
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: var(--bg-elevated);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.quest-top {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.quest-label {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.quest-progress {
+  font-size: 12px;
+  color: var(--text-dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.quest-claim {
+  align-self: flex-start;
+  min-height: 36px;
+  padding: 0 16px;
+  border-radius: 11px;
+  border: none;
+  background: var(--accent);
+  color: #06111f;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.quest-claim:disabled {
+  background: var(--line);
+  color: var(--text-dim);
+}
+
+.quest-done {
+  font-size: 12px;
+  color: #4cd964;
+}
+
+/* Transicao de warp */
+
+.warp-fade {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease;
+}
+
+.warp-fade-on {
+  opacity: 1;
 }

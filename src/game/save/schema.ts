@@ -58,6 +58,8 @@ export interface SaveData {
 
   seen: number[];
   caught: number[];
+  /** Mapas em que o jogador ja pisou; libera destinos de expedicao. */
+  visited: string[];
   badges: string[];
   flags: Record<string, boolean>;
 
@@ -105,6 +107,7 @@ export function createNewSave(playerName: string): SaveData {
 
     seen: [],
     caught: [],
+    visited: ['MAP_PALLET_TOWN'],
     badges: [],
     flags: {},
 
@@ -132,6 +135,7 @@ export function migrate(save: SaveData): SaveData {
   return {
     ...base,
     ...save,
+    visited: save.visited ?? base.visited,
     stats: { ...base.stats, ...save.stats },
     dailies: { ...base.dailies, ...save.dailies },
     bag: { ...save.bag },

@@ -65,6 +65,14 @@ export interface OverworldEvents {
   onBump?: () => void;
 }
 
+/** Onde o jogador esta, no formato que o save guarda. */
+export interface PlayerPosition {
+  map: string;
+  x: number;
+  y: number;
+  dir: Direction;
+}
+
 export class Overworld {
   world: World;
   player: PlayerState;
@@ -78,6 +86,8 @@ export class Overworld {
   private moveDuration = WALK_MS;
   private turnTimer = 0;
   private swapping = false;
+  /** Tile de warp em que o jogador acabou de chegar: nao dispara de novo. */
+  private warpLock: { x: number; y: number } | null = null;
   private readonly rng: RNG;
 
   constructor(world: World, spawn: { x: number; y: number; dir?: Direction }, rng: RNG) {
@@ -102,6 +112,15 @@ export class Overworld {
 
   setIntent(intent: MoveIntent): void {
     this.intent = intent;
+  }
+
+  position(): PlayerPosition {
+    return {
+      map: this.world.map.id,
+      x: this.player.x,
+      y: this.player.y,
+      dir: this.player.dir,
+    };
   }
 
   /** Tile a frente do jogador -- o alvo de "falar/examinar". */
@@ -188,6 +207,17 @@ export class Overworld {
     }
 
     if (!this.isPassable(targetX, targetY, dir)) {
+      // Em pe num capacho ou numa escada, andar contra a parede e o jeito de
+      // sair -- e assim que se deixa um predio nos jogos originais.
+      const here = this.world.tileAt(p.x, p.y);
+      const onExit =
+        here.behavior === 'door' || here.behavior === 'warp' || here.behavior === 'stairs';
+      const warp = onExit ? this.world.warpAt(p.x, p.y) : null;
+      if (warp && warp.warp.dest !== 'MAP_NONE') {
+        this.warpLock = null;
+        this.events.onWarp?.(warp.warp.dest, warp.warp.destWarp);
+        return;
+      }
       this.events.onBump?.();
       return;
     }
@@ -206,7 +236,13 @@ export class Overworld {
   isPassable(x: number, y: number, fromDir: Direction): boolean {
     const tile = this.world.tileAt(x, y);
     if (tile.isBorder) return false;
-    if (tile.collision !== 0) return false;
+    // Portas e escadas tem colisao no mapa original, mas o jogo deixa entrar
+    // nelas: e assim que se atravessa um warp.
+    if (tile.collision !== 0) {
+      const isDoorway =
+        tile.behavior === 'door' || tile.behavior === 'warp' || tile.behavior === 'stairs';
+      if (!isDoorway || !this.world.warpAt(x, y)) return false;
+    }
     if (tile.behavior === 'blocked') return false;
     if (isWater(tile.behavior) && !this.player.surfing) return false;
     if (!isWater(tile.behavior) && this.player.surfing && tile.behavior !== 'normal') return false;
@@ -228,14 +264,15 @@ export class Overworld {
       return;
     }
 
+    // Saiu do tile em que caiu vindo de um warp: pode teleportar de novo.
+    if (this.warpLock && (this.warpLock.x !== p.x || this.warpLock.y !== p.y)) {
+      this.warpLock = null;
+    }
+
     const warp = this.world.warpAt(p.x, p.y);
-    if (warp && (warp.warp.dest !== 'MAP_NONE' || warp.warp.destWarp >= 0)) {
-      const tile = this.world.tileAt(p.x, p.y);
-      // Portas e escadas so teleportam quando o jogador entra nelas de fato.
-      if (tile.behavior !== 'sign') {
-        this.events.onWarp?.(warp.warp.dest, warp.warp.destWarp);
-        return;
-      }
+    if (warp && warp.warp.dest !== 'MAP_NONE' && !this.warpLock) {
+      this.events.onWarp?.(warp.warp.dest, warp.warp.destWarp);
+      return;
     }
 
     const tile = this.world.tileAt(p.x, p.y);
@@ -248,6 +285,26 @@ export class Overworld {
     if (!table || table.slots.length === 0) return;
     // Mesma chance do Gen 3: Random() % 2880 < rate * 16.
     if (this.rng.next() * 180 < table.rate) this.events.onEncounter?.(kind);
+  }
+
+  /** Chega num mapa vindo de um warp, sem disparar o warp de destino. */
+  async arriveFromWarp(mapId: string, x: number, y: number, dir?: Direction): Promise<void> {
+    await this.swapTo(mapId, x, y, dir);
+    this.warpLock = { x, y };
+  }
+
+  /**
+   * Desce um tile se der: ao sair de um warp o jogador fica em pe na porta, e
+   * o jogo original o coloca um passo a frente dela.
+   */
+  stepOutOfDoor(): void {
+    const p = this.player;
+    if (!this.isPassable(p.x, p.y + 1, 'down')) return;
+    if (this.world.warpAt(p.x, p.y + 1)) return;
+    p.y += 1;
+    p.fromY = p.y;
+    p.dir = 'down';
+    this.warpLock = null;
   }
 
   async swapTo(mapId: string, x: number, y: number, dir?: Direction): Promise<void> {

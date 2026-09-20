@@ -6,12 +6,15 @@ import { useEffect, useRef, useState } from 'react';
 
 interface Props {
   text: string;
+  /** Substitui {PLAYER} nas falas originais do jogo. */
+  playerName?: string;
   onClose: () => void;
 }
 
 const CHAR_MS = 18;
 
-export function Dialogue({ text, onClose }: Props) {
+export function Dialogue({ text: raw, playerName, onClose }: Props) {
+  const text = playerName ? raw.replaceAll('{PLAYER}', playerName) : raw;
   const [shown, setShown] = useState('');
   const doneRef = useRef(false);
 

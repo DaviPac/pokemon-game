@@ -30,6 +30,9 @@ function loadJson<T>(path: string): Promise<T> {
   return promise;
 }
 
+/** Carrega qualquer JSON de assets pelo caminho, com o mesmo cache. */
+export const loadJsonAsset = loadJson;
+
 export const loadWorldIndex = (): Promise<WorldIndex> => loadJson<WorldIndex>('data/world.json');
 export const loadTilesets = (): Promise<TilesetsFile> => loadJson<TilesetsFile>('data/tilesets.json');
 export const loadSpecies = (): Promise<SpeciesFile> => loadJson<SpeciesFile>('data/species.json');
