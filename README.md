@@ -103,11 +103,13 @@ assim, limpar os dados do site pelo navegador apaga tudo, entao as configuracoes
 trazem **exportar backup** (gera um arquivo), **importar backup** e um pedido de
 armazenamento persistente ao navegador.
 
-`npm run test:capture` faz o mesmo com o fim de batalha: confere que o tema de
-vitoria segura a tela ate acabar, que a captura abre a tela do Pokemon capturado
-com o tema tocando, que a musica do lugar volta ao chegar no mapa (e que a de
-batalha nao sobra tocando), que a barra inferior nao cobre botao nenhum e que
-correr usa o sprite de corrida.
+`npm run test:capture` faz o mesmo com o fim de batalha e com o acabamento da
+tela: confere que o tema de vitoria segura a tela ate acabar, que a captura abre
+a tela do Pokemon capturado com o tema tocando, que a musica do lugar volta ao
+chegar no mapa (e que a de batalha nao sobra tocando), que perder leva de volta
+ao Centro Pokemon, que sair do app cala o som, que a barra inferior nao cobre
+botao nenhum, que correr usa o sprite de corrida e que numa tela de densidade
+quebrada o mapa sai pixel a pixel, sem costura entre os tiles.
 
 `npm run test:update` verifica isso de ponta a ponta num navegador de verdade:
 instala uma versao, cria um save, publica outra por cima, confere que o aviso

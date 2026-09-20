@@ -11,7 +11,17 @@
 export interface OverworldHandle {
   player: Record<string, unknown>;
   npcs: { x: number; y: number; data: { script: string } }[];
+  world: { map: { id: string } };
   swapTo(map: string, x: number, y: number, dir: string): Promise<void>;
+}
+
+/** O pedaco do save que os testes precisam mexer. */
+export interface SaveHandle {
+  party: {
+    hp: number;
+    level: number;
+    moves: { id: string; pp: number; maxPp: number }[];
+  }[];
 }
 
 /** O estado global do jogo, o bastante para preparar um teste. */
@@ -19,13 +29,14 @@ export interface GameHandle {
   getState(): {
     addItem(item: string, amount: number): void;
     healParty(): void;
+    update(mutate: (save: SaveHandle) => void): void;
   };
 }
 
 declare global {
   interface Window {
     __overworld?: OverworldHandle;
-    __audio?: { nowPlaying: string | null };
+    __audio?: { nowPlaying: string | null; state: string };
     __game?: GameHandle;
   }
 }

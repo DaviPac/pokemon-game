@@ -20,11 +20,19 @@ import { mapDisplayName } from '../../i18n/places.js';
 /** Quantos tiles queremos ver na largura da tela em modo retrato. */
 const TARGET_TILES_ACROSS = 11;
 
+/** Mudanca de lugar pedida de fora do mapa (derrota, por exemplo). */
+export interface TeleportRequest extends PlayerPosition {
+  /** Muda a cada pedido: e o que faz o mesmo destino valer duas vezes. */
+  token: number;
+}
+
 interface Props {
   start: PlayerPosition;
   events: EventsFile | null;
   /** Congela o jogo enquanto uma tela por cima esta aberta. */
   paused: boolean;
+  /** Leva o jogador para outro lugar sem ele ter andado ate la. */
+  teleport?: TeleportRequest | null;
   onEncounter: (kind: 'land' | 'water', mapId: string) => void;
   onInteract: (interaction: Interaction) => void;
   onPosition: (position: PlayerPosition) => void;
@@ -36,6 +44,7 @@ export function OverworldScreen({
   start,
   events,
   paused,
+  teleport,
   onEncounter,
   onInteract,
   onPosition,
@@ -144,6 +153,20 @@ export function OverworldScreen({
     if (!paused) void audio.playMusic(songForMap(overworld.world.map));
   }, [paused, ready]);
 
+  // --- Teleporte vindo de fora ----------------------------------------------
+  useEffect(() => {
+    const overworld = overworldRef.current;
+    if (!ready || !overworld || !teleport) return;
+    void travelTo(overworld, teleport, setFading, () => {
+      setMapName(mapDisplayName(overworld.world.map));
+      void rendererRef.current.preload(overworld.world);
+      void rendererRef.current.preloadSprites(overworld.npcs.map((n) => n.data.gfx));
+      callbacks.current.onPosition(overworld.position());
+    }, () => pausedRef.current);
+    // Um token novo e um pedido novo, mesmo que o destino seja o mesmo.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, teleport?.token]);
+
   // --- Loop -----------------------------------------------------------------
   useEffect(() => {
     if (!ready) return;
@@ -158,15 +181,27 @@ export function OverworldScreen({
     let raf = 0;
     let last = performance.now();
 
+    // O canvas e medido pelo espaco que o cerca, e nao por ele mesmo: assim
+    // ajustar o tamanho dele nao dispara uma nova medicao sem fim.
+    const host = canvas.parentElement ?? canvas;
+
     const resize = () => {
-      const dpr = Math.min(window.devicePixelRatio || 1, 2.5);
-      const rect = canvas.getBoundingClientRect();
-      canvas.width = Math.max(1, Math.round(rect.width * dpr));
-      canvas.height = Math.max(1, Math.round(rect.height * dpr));
+      const dpr = window.devicePixelRatio || 1;
+      const rect = host.getBoundingClientRect();
+      const width = Math.max(1, Math.round(rect.width * dpr));
+      const height = Math.max(1, Math.round(rect.height * dpr));
+      canvas.width = width;
+      canvas.height = height;
+      // O tamanho em CSS vem do tamanho real em pixels, e nao o contrario: um
+      // pixel do canvas passa a ser exatamente um pixel do aparelho. Sem isso,
+      // em telas de densidade quebrada o navegador reamostrava a imagem inteira
+      // e sobrava uma linha fininha na borda de cada tile.
+      canvas.style.width = `${width / dpr}px`;
+      canvas.style.height = `${height / dpr}px`;
     };
     resize();
     const observer = new ResizeObserver(resize);
-    observer.observe(canvas);
+    observer.observe(host);
 
     const frame = (now: number) => {
       const dt = Math.min(60, now - last);
@@ -193,17 +228,14 @@ export function OverworldScreen({
       let py = (player.fromY + (player.y - player.fromY) * player.progress) * TILE + TILE / 2;
       const dpr = canvas.width / Math.max(1, canvas.getBoundingClientRect().width);
       const cssWidth = canvas.width / dpr;
-      let scale =
-        (zoomSetting > 0
-          ? zoomSetting
-          : clamp(Math.round(cssWidth / (TILE * TARGET_TILES_ACROSS)), 2, 6)) * dpr;
+      let scale = viewScale(cssWidth, zoomSetting, dpr);
 
       // Mapas pequenos (interiores) ficam centralizados e ampliados ate
       // preencher a largura, em vez de mostrar o vazio alem da borda.
       const map = overworld.world.map;
       const mapPixelWidth = map.width * TILE;
       if (mapPixelWidth * scale < canvas.width) {
-        scale = Math.min(8 * dpr, Math.ceil(canvas.width / mapPixelWidth));
+        scale = Math.min(Math.round(8 * dpr), Math.ceil(canvas.width / mapPixelWidth));
       }
       const halfW = canvas.width / (2 * scale);
       const halfH = canvas.height / (2 * scale);
@@ -303,10 +335,10 @@ export function OverworldScreen({
       if (!overworld || !canvas) return;
 
       const rect = canvas.getBoundingClientRect();
-      const scale =
-        zoomSetting > 0
-          ? zoomSetting
-          : clamp(Math.round(rect.width / (TILE * TARGET_TILES_ACROSS)), 2, 6);
+      // Mesma conta do desenho, trazida de volta para pixels de CSS: o toque
+      // precisa mirar no tile que o jogador esta vendo.
+      const dpr = canvas.width / Math.max(1, rect.width);
+      const scale = viewScale(rect.width, zoomSetting, dpr) / dpr;
 
       // O jogador esta sempre no centro da tela; o resto e aritmetica de tiles.
       const player = overworld.player;
@@ -382,6 +414,33 @@ async function enterWarp(
   }
 }
 
+/**
+ * Leva o jogador para um lugar marcado no save (o Centro Pokemon, depois de
+ * uma derrota). Chega como se tivesse saido de um warp, entao ele nao e
+ * teleportado de volta ao pisar na porta de entrada.
+ */
+async function travelTo(
+  overworld: Overworld,
+  to: PlayerPosition,
+  setFading: (value: boolean) => void,
+  onArrive: () => void,
+  /** Como o mapa deve ficar no fim: a tela por cima pode continuar aberta. */
+  pausedAfter: () => boolean,
+): Promise<void> {
+  overworld.paused = true;
+  setFading(true);
+  await new Promise((resolve) => setTimeout(resolve, 220));
+  try {
+    await overworld.arriveFromWarp(to.map, to.x, to.y, to.dir);
+    onArrive();
+  } catch {
+    // Mapa inexistente: melhor ficar onde esta do que travar a tela.
+  } finally {
+    overworld.paused = pausedAfter();
+    setFading(false);
+  }
+}
+
 /** O NPC vira para o jogador antes de falar. */
 function faceNpc(overworld: Overworld, interaction: Interaction): void {
   if (!interaction || !('npc' in interaction)) return;
@@ -419,6 +478,17 @@ function consumePath(overworld: Overworld, bus: InputBus): void {
   }
   bus.dir = dir;
   bus.running = path.length > 3;
+}
+
+/**
+ * Quantos pixels do aparelho cada pixel do mundo ocupa. E sempre um numero
+ * inteiro: e o que mantem cada tile encaixado na grade de pixels da tela, sem
+ * a linha fina que aparecia entre um tile e outro em aparelhos com densidade
+ * quebrada (2,75x, por exemplo).
+ */
+function viewScale(cssWidth: number, zoomSetting: number, dpr: number): number {
+  const zoom = zoomSetting > 0 ? zoomSetting : clamp(Math.round(cssWidth / (TILE * TARGET_TILES_ACROSS)), 2, 6);
+  return Math.max(1, Math.round(zoom * dpr));
 }
 
 function clamp(value: number, min: number, max: number): number {

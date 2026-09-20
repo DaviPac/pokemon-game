@@ -17,6 +17,25 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.3.2',
+    date: '2026-09-20',
+    title: 'Derrota, silencio e pixels no lugar',
+    changes: [
+      {
+        kind: 'correcao',
+        text: 'Perder uma batalha agora leva mesmo de volta ao ultimo Centro Pokemon, em vez de deixar voce de pe onde caiu.',
+      },
+      {
+        kind: 'correcao',
+        text: 'Sair do app (ou trocar de aba) para o som na hora, e ele volta de onde parou quando voce retorna.',
+      },
+      {
+        kind: 'correcao',
+        text: 'Sumiu a linha fina que aparecia na borda de cada tile do mapa em telas de densidade quebrada.',
+      },
+    ],
+  },
+  {
     version: '0.3.1',
     date: '2026-09-20',
     title: 'A captura ganhou sua cena',

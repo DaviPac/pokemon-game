@@ -99,8 +99,11 @@ export class OverworldRenderer {
     const tilesDown = Math.ceil(viewHeight / (TILE * scale)) + 3;
 
     ctx.save();
-    ctx.scale(scale, scale);
-    ctx.translate(-Math.round(originX), -Math.round(originY));
+    // A camera e arredondada em pixels de tela, nao do mundo: com uma escala
+    // inteira, cada tile cai exatamente sobre a grade de pixels do aparelho.
+    // Sem isso, as bordas caiam no meio de um pixel e sobrava uma linha fina do
+    // fundo entre um tile e outro.
+    ctx.setTransform(scale, 0, 0, scale, -Math.round(originX * scale), -Math.round(originY * scale));
 
     for (let ty = firstTileY; ty < firstTileY + tilesDown; ty++) {
       for (let tx = firstTileX; tx < firstTileX + tilesAcross; tx++) {
@@ -119,10 +122,12 @@ export class OverworldRenderer {
     }
 
     // Personagens em ordem de profundidade: quem esta mais abaixo cobre.
+    // A posicao vai arredondada em pixels do mundo, como no GBA: meio pixel
+    // deixaria o sprite tremendo a cada quadro.
     const actors: { y: number; draw: () => void }[] = [];
     for (const npc of npcs) {
-      const px = lerp(npc.fromX, npc.x, npc.progress) * TILE;
-      const py = lerp(npc.fromY, npc.y, npc.progress) * TILE;
+      const px = Math.round(lerp(npc.fromX, npc.x, npc.progress) * TILE);
+      const py = Math.round(lerp(npc.fromY, npc.y, npc.progress) * TILE);
       if (px < originX - 64 || py < originY - 96) continue;
       if (px > originX + viewWidth / scale + 64 || py > originY + viewHeight / scale + 96) continue;
       actors.push({
@@ -136,12 +141,13 @@ export class OverworldRenderer {
       });
     }
 
-    const playerPx = lerp(player.fromX, player.x, player.progress) * TILE;
+    const playerPx = Math.round(lerp(player.fromX, player.x, player.progress) * TILE);
     let playerPy = lerp(player.fromY, player.y, player.progress) * TILE;
     if (player.jumping) {
       // Arco do pulo de ledge.
       playerPy -= Math.sin(player.progress * Math.PI) * 10;
     }
+    playerPy = Math.round(playerPy);
     actors.push({
       y: playerPy,
       draw: () =>

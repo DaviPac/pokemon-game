@@ -19,7 +19,7 @@ import { shinyChanceFor, useGame } from '../state/game.js';
 import { haptic } from '../state/settings.js';
 import { BattleScreen } from './battle/BattleScreen.js';
 import { CaughtScreen } from './battle/CaughtScreen.js';
-import { OverworldScreen } from './overworld/OverworldScreen.js';
+import { OverworldScreen, type TeleportRequest } from './overworld/OverworldScreen.js';
 import { Bag } from './screens/Bag.js';
 import { NewGame } from './screens/NewGame.js';
 import { Pokedex } from './screens/Pokedex.js';
@@ -63,6 +63,7 @@ export function App() {
   const [shopOpen, setShopOpen] = useState(false);
   const [battle, setBattle] = useState<PendingBattle | null>(null);
   const [captured, setCaptured] = useState<CaptureResult | null>(null);
+  const [teleport, setTeleport] = useState<TeleportRequest | null>(null);
   const [events, setEvents] = useState<EventsFile | null>(null);
   const [newNotes, setNewNotes] = useState<PatchNote[]>([]);
   const rngRef = useRef(new RNG());
@@ -219,6 +220,11 @@ export function App() {
       state.update((s) => {
         s.position = { ...s.respawn, dir: 'down' };
       });
+      // Nao basta anotar no save: o mapa aberto tambem precisa levar o jogador
+      // ate la, senao ele continua de pe onde caiu e o proximo passo apaga o
+      // retorno que acabamos de gravar.
+      const respawn = useGame.getState().save?.respawn;
+      if (respawn) setTeleport({ ...respawn, dir: 'down', token: Date.now() });
       haptic([40, 80, 40]);
       setDialogue('Voce ficou sem Pokemon em condicao de lutar e voltou ao Centro Pokemon.');
     }
@@ -230,8 +236,11 @@ export function App() {
     useGame.getState().update((s) => {
       s.position = position;
       if (!s.visited.includes(position.map)) s.visited = [...s.visited, position.map];
-      // Centros Pokemon viram ponto de retorno.
-      if (/PokemonCenter/i.test(position.map)) {
+      // Centros Pokemon viram ponto de retorno. O identificador do mapa vem em
+      // caixa alta com underscores (MAP_VIRIDIAN_CITY_POKEMON_CENTER_1F) -- a
+      // grafia colada, que o resto do jogo usa para o *nome* do mapa, nunca
+      // casava aqui e o ponto de retorno ficava para sempre em Pallet Town.
+      if (/POKEMON_CENTER/i.test(position.map)) {
         s.respawn = { map: position.map, x: position.x, y: position.y };
       }
     });
@@ -320,6 +329,7 @@ export function App() {
         <OverworldScreen
           start={save.position}
           events={events}
+          teleport={teleport}
           paused={overlayOpen || battle !== null}
           onEncounter={(kind, mapId) => void startWildBattle(kind, mapId)}
           onInteract={handleInteraction}

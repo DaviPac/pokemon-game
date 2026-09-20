@@ -74,7 +74,38 @@ class AudioEngine {
 
     this.music = new MusicPlayer(context, this.musicGain);
     void context.resume();
+    this.watchAppVisibility();
     this.flushPending();
+  }
+
+  /**
+   * Sair do app cala o som.
+   *
+   * Um jogo de celular vive em segundo plano: trocar de aba ou voltar para a
+   * tela inicial nao pode deixar a musica tocando por tras de outro app. O
+   * contexto e suspenso (o relogio dele para junto, entao a musica retoma de
+   * onde estava) e os gritos, que sao <audio> comum, param na mao.
+   */
+  private watchAppVisibility(): void {
+    if (typeof document === 'undefined') return;
+
+    const pause = () => {
+      void this.context?.suspend();
+      for (const cry of this.cries.values()) cry.pause();
+    };
+    const resume = () => {
+      if (this.muted) return;
+      void this.context?.resume();
+    };
+
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'hidden') pause();
+      else resume();
+    });
+    // Alguns navegadores (iOS, sobretudo) so avisam por estes.
+    window.addEventListener('pagehide', pause);
+    window.addEventListener('freeze', pause);
+    window.addEventListener('pageshow', resume);
   }
 
   get enabled(): boolean {
@@ -84,6 +115,11 @@ class AudioEngine {
   /** O que esta tocando agora. Util para depurar e para os testes de tela. */
   get nowPlaying(): SongId | null {
     return this.currentSong;
+  }
+
+  /** Estado do audio: 'running', 'suspended' ou 'off' antes do primeiro toque. */
+  get state(): string {
+    return this.context?.state ?? 'off';
   }
 
   setMuted(muted: boolean): void {
