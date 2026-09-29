@@ -71,14 +71,20 @@ async function main(): Promise<void> {
 
     // --- 2. Publica uma versao nova ---------------------------------------
     console.log('\n2. publicando uma versao nova por cima');
-    await writeFile(pkgPath, originalPkg.replace('"version": "0.3.0"', '"version": "0.3.1"'));
+    // A versao "nova" e a atual com o ultimo numero somado: o teste nao pode
+    // depender de qual versao o jogo esta no momento.
+    const current = (JSON.parse(originalPkg) as { version: string }).version;
+    const parts = current.split('.').map(Number);
+    parts[parts.length - 1]++;
+    const next = parts.join('.');
+    await writeFile(pkgPath, originalPkg.replace(`"version": "${current}"`, `"version": "${next}"`));
     await writeFile(
       notesPath,
       originalNotes.replace(
         'export const PATCH_NOTES: PatchNote[] = [',
         `export const PATCH_NOTES: PatchNote[] = [
   {
-    version: '0.3.1',
+    version: '${next}',
     date: '2026-09-20',
     title: 'Versao de teste',
     changes: [{ kind: 'correcao', text: 'Entrada usada pelo teste de atualizacao.' }],
@@ -86,7 +92,7 @@ async function main(): Promise<void> {
       ),
     );
     execFileSync('npm', ['run', 'build'], { stdio: 'pipe' });
-    console.log('  build da versao 0.3.1 publicado');
+    console.log(`  build da versao ${next} publicado`);
 
     // --- 3. O jogo percebe sozinho ----------------------------------------
     console.log('\n3. procurando a atualizacao com o app aberto');
@@ -113,7 +119,7 @@ async function main(): Promise<void> {
     }
 
     const running = await page.evaluate(() => document.documentElement.dataset.version ?? '?');
-    check('versao nova em execucao', running === '0.3.1', `rodando=${running}`);
+    check('versao nova em execucao', running === next, `rodando=${running}`);
 
     const seenVersion = await page.evaluate(
       () =>
@@ -127,7 +133,7 @@ async function main(): Promise<void> {
           };
         }),
     );
-    check('versao anotada no save', seenVersion === '0.3.1', `lastSeenVersion=${seenVersion}`);
+    check('versao anotada no save', seenVersion === next, `lastSeenVersion=${seenVersion}`);
 
     const after = await readSave(page);
     check(

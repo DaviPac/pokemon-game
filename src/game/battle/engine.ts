@@ -1,13 +1,19 @@
 /**
- * Motor de batalha. E TypeScript puro: nao toca no DOM e nao sorteia nada fora
- * do RNG semeado, entao da para testar turno a turno.
+ * Motor de batalha sobre o simulador do Pokemon Showdown (`@pkmn/sim`).
  *
- * A saida e uma fila de eventos (`BattleEvent`) que a interface consome para
- * animar. O motor nunca espera pela animacao -- ele resolve o turno inteiro de
- * uma vez e entrega o roteiro.
+ * As regras -- dano, precisao, habilidades, itens segurados, clima, os mais de
+ * seiscentos golpes com todos os efeitos -- sao as do Showdown, o mesmo codigo
+ * que roda as batalhas competitivas do site. O que o simulador nao conhece e
+ * do jogo e continua aqui: a mochila, a Pokebola, a fuga, a IA do oponente e a
+ * EXP no fim de cada nocaute.
+ *
+ * A interface nao mudou: cada acao devolve a fila de eventos do turno inteiro,
+ * e a tela anima um por um. Os eventos saem do log do simulador, lido pelo
+ * `ProtocolReader`.
  */
+import { Battle as SimBattle, Dex, type Pokemon as SimPokemon } from '@pkmn/sim';
 import type { RNG } from '../core/rng.js';
-import type { MoveData, StatName, StatusName, TypeChart } from '../data/types.js';
+import type { MoveCategory, PokemonType, StatName, StatusName, TypeChart } from '../data/types.js';
 import type { Pokemon, PokemonContext } from '../pokemon/pokemon.js';
 import {
   displayName,
@@ -26,67 +32,53 @@ import {
 } from '../pokemon/pokemon.js';
 import { chooseFoeAction } from './ai.js';
 import { attemptCapture, escapeChance, type CaptureContext } from './capture.js';
-import {
-  accuracyCheck,
-  calculateDamage,
-  clampStage,
-  confusionDamage,
-  describeEffectiveness,
-  effectiveStat,
-  typeEffectiveness,
-} from './damage.js';
-import {
-  freshActiveState,
-  type ActiveState,
-  type BattleAction,
-  type BattleConfig,
-  type BattleEvent,
-  type BattleOutcome,
-  type BattleTeam,
-  type Side,
+import { typeEffectiveness } from './effectiveness.js';
+import { BATTLE_ITEMS } from './items.js';
+import { ProtocolReader, type Resolved } from './protocol.js';
+import type {
+  BattleAction,
+  BattleConfig,
+  BattleEvent,
+  BattleOutcome,
+  BattleTeam,
+  Side,
 } from './types.js';
 
-const STATUS_LABEL: Record<StatusName, string> = {
-  brn: 'foi queimado',
-  par: 'ficou paralisado',
-  slp: 'caiu no sono',
-  frz: 'foi congelado',
-  psn: 'foi envenenado',
-  tox: 'foi gravemente envenenado',
-};
+export { BATTLE_ITEMS } from './items.js';
 
-/** Nome do atributo e o artigo que combina com ele, para o texto sair certo. */
-const STAT_LABEL: Record<string, { name: string; article: 'o' | 'a' }> = {
-  atk: { name: 'Ataque', article: 'o' },
-  def: { name: 'Defesa', article: 'a' },
-  spa: { name: 'Ataque Especial', article: 'o' },
-  spd: { name: 'Defesa Especial', article: 'a' },
-  spe: { name: 'Velocidade', article: 'a' },
-  accuracy: { name: 'Precisao', article: 'a' },
-  evasion: { name: 'Evasao', article: 'a' },
-};
+/**
+ * Geracao 6 (X/Y), a mesma dos dados do jogo: 721 especies, tipo Fada e as
+ * regras de antes dos Z-Moves. Sem previa de times -- o primeiro saudavel
+ * entra direto, como no jogo de verdade.
+ */
+const FORMAT = 'gen6customgame@@@!Team Preview';
 
-export interface BattleItemUse {
-  /** Cura fixa de HP. */
-  heal?: number;
-  /** Remove status; 'all' limpa qualquer um. */
-  cure?: StatusName | 'all';
-  /** Revive com metade do HP. */
-  revive?: boolean;
-  ball?: string;
+/**
+ * Uma condicao que so existe para o jogo: o Pokemon do jogador passa a vez em
+ * silencio. E como a mochila, a bola e a fuga entram num turno do simulador --
+ * o jogador "escolhe um golpe" que nunca acontece, e o oponente age normalmente.
+ */
+const SKIP_ID = 'pdskipturn';
+
+const PLAYER_NAME = 'Jogador';
+const FOE_NAME = 'Oponente';
+
+const STAT_KEYS: StatName[] = ['hp', 'atk', 'def', 'spa', 'spd', 'spe'];
+
+/** Uma opcao do menu de golpes, ja com o que o simulador permite. */
+export interface MoveOption {
+  /** Posicao para `takeTurn({ kind: 'move', index })`. */
+  index: number;
+  id: string;
+  name: string;
+  type: PokemonType;
+  category: MoveCategory;
+  pp: number;
+  maxPp: number;
+  disabled: boolean;
 }
 
-export const BATTLE_ITEMS: Record<string, BattleItemUse & { name: string }> = {
-  potion: { name: 'Potion', heal: 20 },
-  superpotion: { name: 'Super Potion', heal: 60 },
-  hyperpotion: { name: 'Hyper Potion', heal: 120 },
-  maxpotion: { name: 'Max Potion', heal: 9999 },
-  fullheal: { name: 'Full Heal', cure: 'all' },
-  antidote: { name: 'Antidote', cure: 'psn' },
-  awakening: { name: 'Awakening', cure: 'slp' },
-  paralyzeheal: { name: 'Paralyze Heal', cure: 'par' },
-  revive: { name: 'Revive', revive: true },
-};
+type SimSide = SimBattle['p1'];
 
 export class Battle {
   readonly config: BattleConfig;
@@ -102,7 +94,10 @@ export class Battle {
   private readonly ctx: PokemonContext;
   private readonly chart: TypeChart;
   private readonly rng: RNG;
-  private events: BattleEvent[] = [];
+  private readonly sim: SimBattle;
+  private readonly reader: ProtocolReader;
+  /** Ate onde o log do simulador ja foi lido. */
+  private cursor = 0;
   /** Quem esteve em campo: divide a EXP como nos jogos. */
   private participants = new Set<string>();
 
@@ -118,9 +113,44 @@ export class Battle {
     this.chart = chart;
     this.rng = rng;
     this.config = config;
-    this.player = { party: playerParty, activeIndex: firstHealthy(playerParty), state: freshActiveState() };
-    this.foe = { party: foeParty, activeIndex: firstHealthy(foeParty), state: freshActiveState() };
-    this.participants.add(this.active('player').uid);
+    this.player = { party: playerParty, activeIndex: Math.max(0, firstHealthy(playerParty)) };
+    this.foe = { party: foeParty, activeIndex: Math.max(0, firstHealthy(foeParty)) };
+
+    this.sim = new SimBattle({
+      formatid: FORMAT as never,
+      seed: `${rng.int(0x10000)},${rng.int(0x10000)},${rng.int(0x10000)},${rng.int(0x10000)}`,
+    });
+    registerSkipCondition(this.sim);
+
+    this.reader = new ProtocolReader({
+      kind: config.kind,
+      foeName: config.foeName,
+      resolve: (ident) => this.resolve(ident),
+      label: (side, pokemon) => this.label(side, pokemon),
+      plain: (pokemon) => displayName(this.ctx, pokemon),
+      moveName: (id) => this.ctx.moves[id]?.n ?? Dex.moves.get(id).name ?? id,
+      onSwitchIn: (side, index) => {
+        this.team(side).activeIndex = index;
+        if (side === 'player') this.participants.add(this.player.party[index].uid);
+      },
+      onFaint: (side, index) => (side === 'foe' ? this.awardExp(this.foe.party[index]) : []),
+    });
+
+    // O simulador comeca a batalha sozinho assim que o segundo jogador entra.
+    // O estado salvo (HP, status, PP) tem de estar no lugar antes disso, entao
+    // a partida so e dada depois, a mao.
+    this.sim.setPlayer('p1', { name: PLAYER_NAME, team: this.teamFor(playerParty, this.player.activeIndex) as never });
+    this.sim.started = true;
+    this.sim.setPlayer('p2', { name: FOE_NAME, team: this.teamFor(foeParty, this.foe.activeIndex) as never });
+    this.sim.started = false;
+    this.restore(this.sim.p1, playerParty);
+    this.restore(this.sim.p2, foeParty);
+    this.sim.start();
+    // A largada reconta a equipe inteira como de pe; quem ja chegou desmaiado
+    // nao conta.
+    for (const side of [this.sim.p1, this.sim.p2]) {
+      side.pokemonLeft = side.pokemon.filter((p) => !p.fainted).length;
+    }
   }
 
   // --- Acesso ---------------------------------------------------------------
@@ -138,84 +168,259 @@ export class Battle {
     return side === 'player' ? 'foe' : 'player';
   }
 
-  /** Evento de entrada em campo, ja com o estado daquele instante. */
-  private sendOutEvent(side: Side, index: number): BattleEvent {
-    const pokemon = this.team(side).party[index];
+  /** O Pokemon do simulador que corresponde a uma posicao da equipe do jogo. */
+  private simPokemon(side: Side, index: number): SimPokemon | undefined {
+    const simSide = side === 'player' ? this.sim.p1 : this.sim.p2;
+    return simSide.pokemon.find((p) => p.m.index === index);
+  }
+
+  private simActive(side: Side): SimPokemon | undefined {
+    return (side === 'player' ? this.sim.p1 : this.sim.p2).active[0];
+  }
+
+  /** O pedido que o simulador fez ao jogador neste turno. */
+  private request(): {
+    moves: { id: string; move: string; pp?: number; maxpp?: number; disabled?: boolean | string }[];
+    trapped: boolean;
+  } | null {
+    const request = this.sim.p1.activeRequest as
+      | { active?: { moves: never[]; trapped?: boolean; maybeTrapped?: boolean }[] }
+      | null;
+    const active = request?.active?.[0];
+    if (!active) return null;
+    return { moves: active.moves, trapped: Boolean(active.trapped) };
+  }
+
+  /**
+   * Os golpes que o jogador pode escolher agora. Vem do simulador: ele sabe
+   * quando um golpe foi desativado, quando so resta Struggle ou quando o
+   * Pokemon esta preso num golpe de varios turnos.
+   */
+  moveOptions(): MoveOption[] {
+    const request = this.request();
+    const own = this.active('player');
+    if (!request) {
+      return own.moves.map((slot, index) => this.option(index, slot.id, slot.pp, slot.maxPp, slot.pp <= 0));
+    }
+    return request.moves.map((move, index) =>
+      this.option(
+        index,
+        move.id,
+        move.pp ?? own.moves[index]?.pp ?? 0,
+        move.maxpp ?? own.moves[index]?.maxPp ?? 0,
+        Boolean(move.disabled),
+        move.move,
+      ),
+    );
+  }
+
+  private option(index: number, id: string, pp: number, maxPp: number, disabled: boolean, name?: string): MoveOption {
+    const data = this.ctx.moves[id];
+    const dex = Dex.moves.get(id);
     return {
-      t: 'sendOut',
-      side,
       index,
-      hp: pokemon.hp,
-      maxHp: maxHp(this.ctx, pokemon),
-      status: pokemon.status,
-      entrance:
-        side === 'player' ? 'player' : this.config.kind === 'trainer' ? 'trainer' : 'wild',
+      id,
+      name: data?.n ?? name ?? dex.name,
+      type: (data?.t ?? dex.type ?? 'Normal') as PokemonType,
+      category: (data?.cat ?? dex.category ?? 'Physical') as MoveCategory,
+      pp,
+      maxPp,
+      disabled,
     };
   }
 
-  /** Devolve e limpa os eventos acumulados. */
-  drain(): BattleEvent[] {
-    const events = this.events;
-    this.events = [];
-    return events;
+  /**
+   * Preso num golpe de varios turnos (Outrage, Solar Beam carregando, Rollout):
+   * o turno segue sozinho, sem mochila nem troca.
+   */
+  get locked(): boolean {
+    const request = this.request();
+    if (!request) return false;
+    const pokemon = this.simActive('player');
+    return Boolean(pokemon?.getLockedMove());
   }
+
+  /** Mean Look, Wrap, Shadow Tag... impedem a troca e a fuga. */
+  get trapped(): boolean {
+    return this.request()?.trapped ?? false;
+  }
+
+  // --- Montagem -------------------------------------------------------------
+
+  /** Converte a equipe do jogo para o formato de time do Showdown. */
+  private teamFor(party: Pokemon[], lead: number) {
+    const order = [lead, ...party.map((_, i) => i).filter((i) => i !== lead)];
+    return order.map((index) => {
+      const pokemon = party[index];
+      const species = speciesOf(this.ctx, pokemon);
+      const spread = (values: number[]) =>
+        Object.fromEntries(STAT_KEYS.map((stat, i) => [stat, values[i] ?? 0]));
+      return {
+        // O nome carrega a posicao na equipe do jogo: o simulador reordena a
+        // equipe a cada troca, e o log so cita o Pokemon pelo nome.
+        name: `m${index}`,
+        species: species.n,
+        level: pokemon.level,
+        gender: pokemon.gender === 'N' ? 'N' : pokemon.gender,
+        shiny: pokemon.shiny,
+        ability: pokemon.ability || species.ab[0] || '',
+        item: pokemon.heldItem ?? '',
+        nature: pokemon.nature,
+        ivs: spread(pokemon.ivs),
+        evs: spread(pokemon.evs),
+        happiness: pokemon.friendship,
+        moves: pokemon.moves.map((slot) => slot.id),
+      };
+    });
+  }
+
+  /** Poe HP, status e PP do save nos Pokemon do simulador. */
+  private restore(side: SimSide, party: Pokemon[]): void {
+    for (const simPokemon of side.pokemon) {
+      const index = Number(simPokemon.name.slice(1));
+      simPokemon.m.index = index;
+      const pokemon = party[index];
+
+      simPokemon.moveSlots.forEach((slot, i) => {
+        const own = pokemon.moves[i];
+        if (!own) return;
+        slot.pp = own.pp;
+        slot.maxpp = own.maxPp;
+      });
+
+      if (pokemon.hp <= 0) {
+        simPokemon.hp = 0;
+        simPokemon.fainted = true;
+        simPokemon.status = 'fnt' as never;
+        continue;
+      }
+      simPokemon.hp = Math.min(pokemon.hp, simPokemon.maxhp);
+      if (pokemon.status) {
+        simPokemon.status = pokemon.status as never;
+        simPokemon.statusState.id = pokemon.status;
+        simPokemon.statusState.target = simPokemon;
+        if (pokemon.status === 'slp') {
+          // O simulador conta o sono do jeito dele: turnos restantes + 1.
+          const turns = Math.max(1, pokemon.sleepTurns + 1);
+          simPokemon.statusState.startTime = turns;
+          simPokemon.statusState.time = turns;
+        }
+        if (pokemon.status === 'tox') simPokemon.statusState.stage = 0;
+      }
+    }
+  }
+
+  /** Copia o estado do simulador de volta para a equipe do jogo. */
+  private sync(): void {
+    for (const [side, party] of [
+      [this.sim.p1, this.player.party],
+      [this.sim.p2, this.foe.party],
+    ] as const) {
+      for (const simPokemon of side.pokemon) {
+        const pokemon = party[simPokemon.m.index as number];
+        if (!pokemon) continue;
+        pokemon.hp = Math.max(0, simPokemon.hp);
+        const status = simPokemon.status as string;
+        pokemon.status = status && status !== 'fnt' ? (status as StatusName) : null;
+        pokemon.sleepTurns = pokemon.status === 'slp' ? Math.max(0, (simPokemon.statusState.time ?? 1) - 1) : 0;
+        // Os golpes de verdade, nao os copiados por Transform ou Mimic.
+        simPokemon.baseMoveSlots.forEach((slot, i) => {
+          const own = pokemon.moves[i];
+          if (own && own.id === slot.id) own.pp = Math.max(0, Math.min(own.maxPp, slot.pp));
+        });
+        if (pokemon.heldItem && !simPokemon.item) pokemon.heldItem = null;
+      }
+    }
+  }
+
+  // --- Leitura --------------------------------------------------------------
+
+  private resolve(ident: string): Resolved | null {
+    const match = /^p([12])[a-z]?:\s*m(\d+)/.exec(ident);
+    if (!match) return null;
+    const side: Side = match[1] === '1' ? 'player' : 'foe';
+    const index = Number(match[2]);
+    const pokemon = this.team(side).party[index];
+    return pokemon ? { side, index, pokemon } : null;
+  }
+
+  private label(side: Side, pokemon: Pokemon): string {
+    const name = displayName(this.ctx, pokemon);
+    if (side === 'player') return name;
+    return this.config.kind === 'wild' ? `${name} selvagem` : `${name} adversario`;
+  }
+
+  /** Le o que o simulador escreveu desde a ultima vez. */
+  private drainLog(): BattleEvent[] {
+    const lines = this.sim.log.slice(this.cursor);
+    this.cursor = this.sim.log.length;
+    return this.reader.read(lines);
+  }
+
+  // --- Abertura -------------------------------------------------------------
 
   /** Abertura do combate: quem entra em campo e o texto inicial. */
   start(): BattleEvent[] {
-    const foe = this.active('foe');
-    if (this.config.kind === 'wild') {
-      this.text(`Um ${displayName(this.ctx, foe)} selvagem apareceu!`);
-      this.push(this.sendOutEvent('foe', this.foe.activeIndex));
-    } else {
-      this.text(`${this.config.foeName ?? 'Treinador'} quer batalhar!`);
-      this.text(`${this.config.foeName ?? 'Treinador'} enviou ${displayName(this.ctx, foe)}!`);
-      this.push(this.sendOutEvent('foe', this.foe.activeIndex));
+    const events = this.drainLog();
+    // O simulador manda o jogador a campo primeiro; os jogos mostram o
+    // oponente antes, e so depois o "Vai, Fulano!". Cada entrada e o texto
+    // seguido do evento de entrada.
+    const entry = (side: Side): BattleEvent[] => {
+      const at = events.findIndex((e) => e.t === 'sendOut' && e.side === side);
+      if (at < 0) return [];
+      const from = at > 0 && events[at - 1].t === 'text' ? at - 1 : at;
+      return events.slice(from, at + 1);
+    };
+    const foe = entry('foe');
+    const player = entry('player');
+    const rest = events.filter((e) => !foe.includes(e) && !player.includes(e));
+    const ordered: BattleEvent[] = [...foe, ...player, ...rest];
+    if (this.config.kind === 'trainer') {
+      ordered.unshift({ t: 'text', text: `${this.config.foeName ?? 'O treinador'} quer batalhar!` });
     }
-    this.text(`Vai, ${displayName(this.ctx, this.active('player'))}!`);
-    this.push(this.sendOutEvent('player', this.player.activeIndex));
-    this.onSendOut('foe');
-    this.onSendOut('player');
-    return this.drain();
+    this.sync();
+    return ordered;
   }
 
   // --- Turno ----------------------------------------------------------------
 
   takeTurn(action: BattleAction): BattleEvent[] {
-    if (this.outcome) return this.drain();
+    if (this.outcome || this.awaitingSwitch) return [];
     this.turn++;
+    const events: BattleEvent[] = [];
 
-    // Fugir e capturar terminam o turno na hora.
-    if (action.kind === 'run') {
-      this.resolveRun();
-      return this.drain();
-    }
-    if (action.kind === 'item' && BATTLE_ITEMS[action.item]?.ball !== undefined) {
-      // (bolas chegam por throwBall; aqui so por seguranca)
-      return this.drain();
-    }
-
-    const foeAction = chooseFoeAction(this.ctx, this.chart, this.rng, this);
-
-    const order = this.decideOrder(action, foeAction);
-    for (const [side, chosen] of order) {
-      if (this.outcome) break;
-      if (isFainted(this.active(side))) continue;
-      this.performAction(side, chosen);
-      this.checkFaints();
-      if (this.awaitingSwitch || this.outcome) break;
+    switch (action.kind) {
+      case 'run':
+        if (!this.tryRun(events)) return events;
+        break;
+      case 'item':
+        if (!this.useItem(action.item, action.targetIndex, events)) return events;
+        break;
+      case 'switch': {
+        const target = this.simPokemon('player', action.index);
+        const choice = target ? `switch ${this.sim.p1.pokemon.indexOf(target) + 1}` : 'default';
+        if (!this.sim.choose('p1', choice)) this.sim.choose('p1', 'default');
+        break;
+      }
+      case 'move':
+        if (!this.sim.choose('p1', `move ${action.index + 1}`)) this.sim.choose('p1', 'default');
+        break;
     }
 
-    if (!this.outcome && !this.awaitingSwitch) this.endOfTurn();
-    return this.drain();
+    return [...events, ...this.resolveTurn()];
   }
 
   /** Jogar uma bola: acao unica do turno numa batalha selvagem. */
-  throwBall(ballId: string, context: Omit<CaptureContext, 'target' | 'targetLevel' | 'turn' | 'isFirstTurn'>): BattleEvent[] {
+  throwBall(
+    ballId: string,
+    context: Omit<CaptureContext, 'target' | 'targetLevel' | 'turn' | 'isFirstTurn'>,
+  ): BattleEvent[] {
+    if (this.outcome || this.awaitingSwitch) return [];
     if (this.config.kind !== 'wild') {
-      this.text('Nao da para capturar o Pokemon de outro treinador!');
-      return this.drain();
+      return [{ t: 'text', text: 'Nao da para capturar o Pokemon de outro treinador!' }];
     }
     this.turn++;
+    this.sync();
     const target = this.active('foe');
     const result = attemptCapture(this.ctx, this.rng, ballId, target, {
       ...context,
@@ -225,687 +430,220 @@ export class Battle {
       isFirstTurn: this.turn === 1,
     });
 
-    this.push({ t: 'ball', shakes: result.shakes, caught: result.caught, ball: ballId });
+    const events: BattleEvent[] = [{ t: 'ball', shakes: result.shakes, caught: result.caught, ball: ballId }];
     if (result.caught) {
-      this.text(`${displayName(this.ctx, target)} foi capturado!`);
-      this.push({ t: 'caught', species: target.species });
+      events.push({ t: 'text', text: `${displayName(this.ctx, target)} foi capturado!` });
+      events.push({ t: 'caught', species: target.species });
       this.caught = target;
-      this.finish('caught');
-      return this.drain();
+      this.finish('caught', events);
+      return events;
     }
 
-    this.text(
-      result.shakes === 0
-        ? 'Ah! O Pokemon escapou na hora!'
-        : result.shakes < 3
-          ? 'Faltou pouco!'
-          : 'Quase! Ele escapou no ultimo instante!',
-    );
-
+    events.push({
+      t: 'text',
+      text:
+        result.shakes === 0
+          ? 'Ah! O Pokemon escapou na hora!'
+          : result.shakes < 3
+            ? 'Faltou pouco!'
+            : 'Quase! Ele escapou no ultimo instante!',
+    });
     // O selvagem ainda ataca no mesmo turno.
-    const foeAction = chooseFoeAction(this.ctx, this.chart, this.rng, this);
-    this.performAction('foe', foeAction);
-    this.checkFaints();
-    if (!this.outcome && !this.awaitingSwitch) this.endOfTurn();
-    return this.drain();
+    this.skipPlayer();
+    return [...events, ...this.resolveTurn()];
   }
 
-  /** Troca forcada depois de um nocaute. */
+  /** Troca forcada depois de um nocaute (ou de U-turn, Baton Pass...). */
   switchTo(index: number): BattleEvent[] {
-    const team = this.player;
-    if (index < 0 || index >= team.party.length) return this.drain();
-    if (isFainted(team.party[index])) return this.drain();
-
-    team.activeIndex = index;
-    team.state = freshActiveState();
-    this.participants.add(team.party[index].uid);
-    this.text(`Vai, ${displayName(this.ctx, team.party[index])}!`);
-    this.push(this.sendOutEvent('player', index));
-    this.onSendOut('player');
+    if (!this.awaitingSwitch) return [];
+    const pokemon = this.player.party[index];
+    if (!pokemon || isFainted(pokemon)) return [];
+    const target = this.simPokemon('player', index);
+    if (!target || !this.sim.choose('p1', `switch ${this.sim.p1.pokemon.indexOf(target) + 1}`)) return [];
     this.awaitingSwitch = false;
-    return this.drain();
+    return this.resolveTurn();
   }
 
-  // --- Resolucao ------------------------------------------------------------
+  /** O jogador passa a vez: a mochila, a bola ou a fuga ja foram o turno dele. */
+  private skipPlayer(): void {
+    const pokemon = this.simActive('player');
+    if (pokemon && !pokemon.fainted) pokemon.addVolatile(SKIP_ID);
+    if (!this.sim.choose('p1', 'move 1')) this.sim.choose('p1', 'default');
+  }
 
-  private decideOrder(
-    playerAction: BattleAction,
-    foeAction: BattleAction,
-  ): [Side, BattleAction][] {
-    const priorityOf = (side: Side, action: BattleAction): number => {
-      if (action.kind === 'switch' || action.kind === 'item' || action.kind === 'run') return 6;
-      const move = this.moveOf(side, action.index);
-      return move?.pri ?? 0;
-    };
+  /**
+   * Faz o oponente escolher e le o turno. Um nocaute no meio pede trocas; a
+   * do oponente e resolvida aqui, a do jogador para e espera a tela.
+   */
+  private resolveTurn(): BattleEvent[] {
+    const events: BattleEvent[] = [];
+    for (let guard = 0; guard < 12; guard++) {
+      if (this.sim.p2.requestState && !this.sim.p2.isChoiceDone()) this.chooseForFoe();
+      events.push(...this.drainLog());
+      this.sync();
 
-    const playerPriority = priorityOf('player', playerAction);
-    const foePriority = priorityOf('foe', foeAction);
-    if (playerPriority !== foePriority) {
-      return playerPriority > foePriority
-        ? [
-            ['player', playerAction],
-            ['foe', foeAction],
-          ]
-        : [
-            ['foe', foeAction],
-            ['player', playerAction],
-          ];
+      if (this.sim.ended) {
+        this.finish(this.sim.winner === PLAYER_NAME ? 'win' : 'loss', events);
+        return events;
+      }
+      if (this.sim.p1.requestState === 'switch' && !this.sim.p1.isChoiceDone()) {
+        // O oponente pode ter de trocar no mesmo instante: escolhe ja, para o
+        // simulador so esperar pelo jogador.
+        if (this.sim.p2.requestState === 'switch' && !this.sim.p2.isChoiceDone()) this.chooseForFoe();
+        this.awaitingSwitch = true;
+        events.push({ t: 'prompt', kind: 'chooseSwitch' });
+        return events;
+      }
+      if (this.sim.p2.requestState === 'switch' && !this.sim.p2.isChoiceDone()) continue;
+      break;
+    }
+    return events;
+  }
+
+  private chooseForFoe(): void {
+    const side = this.sim.p2;
+    if (side.requestState === 'switch') {
+      // Nocaute: entra o proximo saudavel, na ordem da equipe.
+      const next = this.foe.party.findIndex(
+        (p, i) => i !== this.foe.activeIndex && !isFainted(p) && !this.simPokemon('foe', i)?.fainted,
+      );
+      const target = next >= 0 ? this.simPokemon('foe', next) : undefined;
+      if (!target || !this.sim.choose('p2', `switch ${side.pokemon.indexOf(target) + 1}`)) {
+        this.sim.choose('p2', 'default');
+      }
+      return;
     }
 
-    const playerSpeed = effectiveStat(this.ctx, this.active('player'), this.player.state, 'spe');
-    const foeSpeed = effectiveStat(this.ctx, this.active('foe'), this.foe.state, 'spe');
-    const playerFirst = playerSpeed === foeSpeed ? this.rng.chance(0.5) : playerSpeed > foeSpeed;
-    return playerFirst
-      ? [
-          ['player', playerAction],
-          ['foe', foeAction],
-        ]
-      : [
-          ['foe', foeAction],
-          ['player', playerAction],
-        ];
-  }
-
-  private performAction(side: Side, action: BattleAction): void {
-    switch (action.kind) {
-      case 'move':
-        this.useMove(side, action.index);
-        break;
-      case 'switch':
-        this.doSwitch(side, action.index);
-        break;
-      case 'item':
-        this.useItem(side, action.item, action.targetIndex);
-        break;
-      case 'run':
-        this.resolveRun();
-        break;
+    const action = chooseFoeAction(this.ctx, this.rng, this);
+    let choice = 'default';
+    if (action.kind === 'switch') {
+      const target = this.simPokemon('foe', action.index);
+      if (target) choice = `switch ${side.pokemon.indexOf(target) + 1}`;
+    } else if (action.kind === 'move') {
+      choice = `move ${action.index + 1}`;
     }
+    if (!this.sim.choose('p2', choice)) this.sim.choose('p2', 'default');
   }
 
-  private doSwitch(side: Side, index: number): void {
-    const team = this.team(side);
-    if (index === team.activeIndex || isFainted(team.party[index])) return;
-    this.text(`Volte, ${displayName(this.ctx, this.active(side))}!`);
-    team.activeIndex = index;
-    team.state = freshActiveState();
-    this.participants.add(team.party[index].uid);
-    this.text(`Vai, ${displayName(this.ctx, team.party[index])}!`);
-    this.push(this.sendOutEvent(side, index));
-    this.onSendOut(side);
+  private foeRequest() {
+    return this.sim.p2.activeRequest as {
+      active?: { moves: { disabled?: boolean | string; pp?: number }[]; trapped?: boolean }[];
+    } | null;
   }
 
-  private useItem(side: Side, itemId: string, targetIndex?: number): void {
+  /** Golpes que o oponente pode usar agora, segundo o simulador. */
+  foeMoveUsable(index: number): boolean {
+    const move = this.foeRequest()?.active?.[0]?.moves[index];
+    if (!move) return false;
+    return !move.disabled && (move.pp === undefined || move.pp > 0);
+  }
+
+  /** O oponente esta preso e nao pode trocar. */
+  get foeTrapped(): boolean {
+    return Boolean(this.foeRequest()?.active?.[0]?.trapped);
+  }
+
+  // --- Acoes do jogo --------------------------------------------------------
+
+  /** Devolve true se o turno segue (a fuga falhou e o oponente age). */
+  private tryRun(events: BattleEvent[]): boolean {
+    if (!this.config.canRun || this.config.kind === 'trainer') {
+      this.turn--;
+      events.push({
+        t: 'text',
+        text:
+          this.config.kind === 'trainer'
+            ? 'Nao da para fugir de uma batalha de treinador!'
+            : 'Nao da para fugir desta batalha!',
+      });
+      return false;
+    }
+
+    const own = this.simActive('player');
+    const foe = this.simActive('foe');
+    const ghost = own?.hasType('Ghost') ?? false;
+    const runAway = own?.hasAbility('runaway') ?? false;
+    if (this.trapped && !ghost && !runAway) {
+      this.turn--;
+      events.push({ t: 'text', text: 'Nao da para fugir!' });
+      return false;
+    }
+
+    this.escapeAttempts++;
+    const playerSpeed = own?.getStat('spe') ?? 1;
+    const foeSpeed = foe?.getStat('spe') ?? 1;
+    if (ghost || runAway || this.rng.next() < escapeChance(playerSpeed, foeSpeed, this.escapeAttempts)) {
+      events.push({ t: 'text', text: 'Voce escapou em seguranca.' });
+      this.finish('fled', events);
+      return false;
+    }
+    events.push({ t: 'text', text: 'Nao deu para escapar!' });
+    this.skipPlayer();
+    return true;
+  }
+
+  /** Devolve true se o item foi usado (e o oponente age em seguida). */
+  private useItem(itemId: string, targetIndex: number | undefined, events: BattleEvent[]): boolean {
     const item = BATTLE_ITEMS[itemId];
-    if (!item) return;
-    const team = this.team(side);
-    const target = team.party[targetIndex ?? team.activeIndex];
-    if (!target) return;
+    const index = targetIndex ?? this.player.activeIndex;
+    const target = this.player.party[index];
+    const simTarget = this.simPokemon('player', index);
+    if (!item || !target || !simTarget) return false;
+    const isActive = index === this.player.activeIndex;
+    const name = displayName(this.ctx, target);
+    const max = simTarget.maxhp;
+    let used = false;
+
+    events.push({ t: 'text', text: `Voce usou ${item.name}.` });
 
     if (item.revive) {
-      if (!isFainted(target)) return;
-      target.hp = Math.floor(maxHp(this.ctx, target) / 2);
-      this.text(`${displayName(this.ctx, target)} voltou a si!`);
-      this.push({ t: 'heal', side, amount: target.hp, hp: target.hp, maxHp: maxHp(this.ctx, target) });
-      return;
-    }
-
-    if (item.heal) {
-      const max = maxHp(this.ctx, target);
-      const healed = Math.min(item.heal, max - target.hp);
-      target.hp += healed;
-      this.text(`${displayName(this.ctx, target)} recuperou ${healed} de HP.`);
-      this.push({ t: 'heal', side, amount: healed, hp: target.hp, maxHp: max });
-    }
-
-    if (item.cure && target.status && (item.cure === 'all' || item.cure === target.status)) {
-      target.status = null;
-      target.sleepTurns = 0;
-      this.push({ t: 'status', side, status: null });
-      this.text(`${displayName(this.ctx, target)} se recuperou.`);
-    }
-  }
-
-  private resolveRun(): void {
-    if (!this.config.canRun) {
-      this.text('Nao da para fugir desta batalha!');
-      return;
-    }
-    if (this.config.kind === 'trainer') {
-      this.text('Nao da para fugir de uma batalha de treinador!');
-      return;
-    }
-    this.escapeAttempts++;
-    const playerSpeed = effectiveStat(this.ctx, this.active('player'), this.player.state, 'spe');
-    const foeSpeed = effectiveStat(this.ctx, this.active('foe'), this.foe.state, 'spe');
-    if (this.rng.next() < escapeChance(playerSpeed, foeSpeed, this.escapeAttempts)) {
-      this.text('Voce escapou em seguranca.');
-      this.finish('fled');
-    } else {
-      this.text('Nao deu para escapar!');
-      const foeAction = chooseFoeAction(this.ctx, this.chart, this.rng, this);
-      this.performAction('foe', foeAction);
-      this.checkFaints();
-      if (!this.outcome && !this.awaitingSwitch) this.endOfTurn();
-    }
-  }
-
-  private moveOf(side: Side, index: number): MoveData | null {
-    const slot = this.active(side).moves[index];
-    return slot ? (this.ctx.moves[slot.id] ?? null) : null;
-  }
-
-  private useMove(side: Side, index: number): void {
-    const attacker = this.active(side);
-    const defenderSide = this.other(side);
-    const defender = this.active(defenderSide);
-    const state = this.team(side).state;
-    const defenderState = this.team(defenderSide).state;
-    const slot = attacker.moves[index];
-    const move = slot ? this.ctx.moves[slot.id] : undefined;
-
-    if (!slot || !move) {
-      this.struggle(side);
-      return;
-    }
-    if (slot.pp <= 0) {
-      this.struggle(side);
-      return;
-    }
-
-    if (!this.canAct(side)) return;
-
-    slot.pp--;
-    state.lastMove = slot.id;
-    // O texto vem antes da animacao: primeiro se le o que aconteceu, depois se ve.
-    this.text(`${displayName(this.ctx, attacker)} usou ${move.n}!`);
-    this.push({ t: 'useMove', side, move: slot.id });
-
-    // Protect e o unico "estado de barreira" que implementamos.
-    if (move.volatile === 'protect' && move.target === 'self') {
-      const odds = 1 / 2 ** state.consecutiveProtect;
-      if (this.rng.next() < odds) {
-        state.protected = true;
-        state.consecutiveProtect++;
-        this.text(`${displayName(this.ctx, attacker)} se protegeu!`);
-      } else {
-        state.consecutiveProtect = 0;
-        this.text('Mas falhou!');
+      if (simTarget.fainted || simTarget.hp <= 0) {
+        simTarget.fainted = false;
+        simTarget.faintQueued = false;
+        simTarget.status = '' as never;
+        simTarget.hp = Math.floor(max / 2);
+        this.sim.p1.pokemonLeft++;
+        this.reader.setHealth('player', index, simTarget.hp, max);
+        events.push({ t: 'text', text: `${name} voltou a si!` });
+        used = true;
       }
-      return;
-    }
-    state.consecutiveProtect = 0;
-
-    if (defenderState.protected && move.protect) {
-      this.text(`${displayName(this.ctx, defender)} se protegeu!`);
-      return;
-    }
-
-    if (move.cat === 'Status') {
-      this.applyStatusMove(side, move);
-      return;
-    }
-
-    if (!accuracyCheck(this.rng, move, state, defenderState)) {
-      this.push({ t: 'miss', side });
-      this.text(`${displayName(this.ctx, attacker)} errou o golpe!`);
-      return;
-    }
-
-    if (this.absorbedByAbility(defenderSide, move)) return;
-
-    const hits = this.hitCount(move);
-    let totalDamage = 0;
-    let lastEffectiveness = 1;
-
-    for (let hit = 0; hit < hits; hit++) {
-      if (isFainted(defender)) break;
-      const result = calculateDamage(
-        this.ctx,
-        this.chart,
-        this.rng,
-        attacker,
-        state,
-        defender,
-        defenderState,
-        this.boostedMove(side, move),
-      );
-      lastEffectiveness = result.effectiveness;
-
-      if (result.effectiveness === 0) {
-        this.text(`Nao afeta ${displayName(this.ctx, defender)}...`);
-        return;
+    } else if (!simTarget.fainted && simTarget.hp > 0) {
+      if (item.heal && simTarget.hp < max) {
+        const healed = Math.min(item.heal, max - simTarget.hp);
+        simTarget.hp += healed;
+        this.reader.setHealth('player', index, simTarget.hp, max);
+        if (isActive) events.push({ t: 'heal', side: 'player', amount: healed, hp: simTarget.hp, maxHp: max });
+        events.push({ t: 'text', text: `${name} recuperou ${healed} de HP.` });
+        used = true;
       }
-
-      let damage = Math.min(result.damage, defender.hp);
-      // Sturdy segura um golpe fatal com o HP cheio.
-      if (
-        damage >= defender.hp &&
-        defender.hp === maxHp(this.ctx, defender) &&
-        this.abilityOf(defenderSide) === 'sturdy'
-      ) {
-        damage = defender.hp - 1;
-        this.text(`${displayName(this.ctx, defender)} aguentou com Sturdy!`);
+      const status = simTarget.status as string;
+      if (item.cure && status && (item.cure === 'all' || item.cure === status || (item.cure === 'psn' && status === 'tox'))) {
+        simTarget.clearStatus();
+        if (isActive) events.push({ t: 'status', side: 'player', status: null });
+        events.push({ t: 'text', text: `${name} se recuperou.` });
+        used = true;
       }
-
-      defender.hp -= damage;
-      totalDamage += damage;
-      this.push({
-        t: 'damage',
-        side: defenderSide,
-        amount: damage,
-        hp: defender.hp,
-        maxHp: maxHp(this.ctx, defender),
-        effectiveness: describeEffectiveness(result.effectiveness),
-        crit: result.crit,
-      });
-      if (result.crit) this.text('Foi um acerto critico!');
     }
 
-    if (hits > 1) this.text(`Acertou ${hits} vezes!`);
-    if (lastEffectiveness > 1) this.text('Foi muito eficaz!');
-    else if (lastEffectiveness < 1 && lastEffectiveness > 0) this.text('Nao foi muito eficaz...');
-
-    this.applyDrainAndRecoil(side, move, totalDamage);
-    if (!isFainted(defender)) this.applySecondary(side, move);
-    this.contactAbilities(side, move);
-
-    if (move.selfdestruct) {
-      attacker.hp = 0;
-      this.text(`${displayName(this.ctx, attacker)} se explodiu!`);
-    }
+    if (!used) events.push({ t: 'text', text: 'Mas nao teve efeito...' });
+    this.skipPlayer();
+    return true;
   }
 
-  private struggle(side: Side): void {
-    const attacker = this.active(side);
-    const defenderSide = this.other(side);
-    const defender = this.active(defenderSide);
-    if (!this.canAct(side)) return;
-    this.text(`${displayName(this.ctx, attacker)} usou Struggle!`);
-    this.push({ t: 'useMove', side, move: 'struggle' });
-    const damage = Math.max(1, Math.floor(maxHp(this.ctx, defender) / 4));
-    defender.hp = Math.max(0, defender.hp - damage);
-    this.push({
-      t: 'damage',
-      side: defenderSide,
-      amount: damage,
-      hp: defender.hp,
-      maxHp: maxHp(this.ctx, defender),
-      effectiveness: 'normal',
-      crit: false,
+  // --- EXP ------------------------------------------------------------------
+
+  private awardExp(defeated: Pokemon): BattleEvent[] {
+    const events: BattleEvent[] = [];
+    const participants = this.player.party.filter((p, index) => {
+      if (!this.participants.has(p.uid)) return false;
+      const health = this.reader.healthOf('player', index);
+      return (health ? health.hp : p.hp) > 0;
     });
-    const recoil = Math.max(1, Math.floor(maxHp(this.ctx, attacker) / 4));
-    attacker.hp = Math.max(0, attacker.hp - recoil);
-    this.text(`${displayName(this.ctx, attacker)} se machucou com o esforco.`);
-  }
-
-  /** Checa sono, paralisia, congelamento, confusao e flinch. */
-  private canAct(side: Side): boolean {
-    const pokemon = this.active(side);
-    const state = this.team(side).state;
-
-    if (state.flinched) {
-      state.flinched = false;
-      this.text(`${displayName(this.ctx, pokemon)} hesitou!`);
-      return false;
-    }
-
-    if (pokemon.status === 'slp') {
-      if (pokemon.sleepTurns > 0) {
-        pokemon.sleepTurns--;
-        this.text(`${displayName(this.ctx, pokemon)} esta dormindo.`);
-        return false;
-      }
-      pokemon.status = null;
-      this.push({ t: 'status', side, status: null });
-      this.text(`${displayName(this.ctx, pokemon)} acordou!`);
-    }
-
-    if (pokemon.status === 'frz') {
-      if (this.rng.next() < 0.2) {
-        pokemon.status = null;
-        this.push({ t: 'status', side, status: null });
-        this.text(`${displayName(this.ctx, pokemon)} descongelou!`);
-      } else {
-        this.text(`${displayName(this.ctx, pokemon)} esta congelado!`);
-        return false;
-      }
-    }
-
-    if (pokemon.status === 'par' && this.rng.next() < 0.25) {
-      this.text(`${displayName(this.ctx, pokemon)} esta paralisado e nao conseguiu se mexer!`);
-      return false;
-    }
-
-    if (state.confusionTurns > 0) {
-      state.confusionTurns--;
-      if (state.confusionTurns === 0) {
-        this.text(`${displayName(this.ctx, pokemon)} saiu da confusao!`);
-      } else {
-        this.text(`${displayName(this.ctx, pokemon)} esta confuso!`);
-        if (this.rng.next() < 1 / 3) {
-          const damage = confusionDamage(this.ctx, this.rng, pokemon, state);
-          pokemon.hp = Math.max(0, pokemon.hp - damage);
-          this.push({
-            t: 'damage',
-            side,
-            amount: damage,
-            hp: pokemon.hp,
-            maxHp: maxHp(this.ctx, pokemon),
-            effectiveness: 'normal',
-            crit: false,
-          });
-          this.text('Ele se machucou na propria confusao!');
-          return false;
-        }
-      }
-    }
-
-    return true;
-  }
-
-  private applyStatusMove(side: Side, move: MoveData): void {
-    const targetSide = move.target === 'self' || move.target === 'allySide' ? side : this.other(side);
-    const targetState = this.team(targetSide).state;
-    const target = this.active(targetSide);
-    const user = this.active(side);
-
-    if (targetSide !== side && !accuracyCheck(this.rng, move, this.team(side).state, targetState)) {
-      this.push({ t: 'miss', side });
-      this.text('Mas errou!');
-      return;
-    }
-
-    let didSomething = false;
-
-    if (move.boosts) {
-      for (const [stat, delta] of Object.entries(move.boosts)) {
-        if (this.applyBoost(targetSide, stat as StatName, delta as number)) didSomething = true;
-      }
-    }
-    if (move.self?.boosts) {
-      for (const [stat, delta] of Object.entries(move.self.boosts)) {
-        if (this.applyBoost(side, stat as StatName, delta as number)) didSomething = true;
-      }
-    }
-    if (move.status && this.applyStatus(targetSide, move.status, move)) didSomething = true;
-    if (move.volatile === 'confusion' && targetState.confusionTurns === 0) {
-      targetState.confusionTurns = this.rng.range(2, 5);
-      this.text(`${displayName(this.ctx, target)} ficou confuso!`);
-      didSomething = true;
-    }
-    if (move.heal) {
-      const max = maxHp(this.ctx, user);
-      const amount = Math.min(max - user.hp, Math.floor((max * move.heal[0]) / move.heal[1]));
-      if (amount > 0) {
-        user.hp += amount;
-        this.push({ t: 'heal', side, amount, hp: user.hp, maxHp: max });
-        this.text(`${displayName(this.ctx, user)} recuperou HP.`);
-        didSomething = true;
-      }
-    }
-
-    if (!didSomething) this.text('Mas nao teve efeito...');
-  }
-
-  private applyBoost(side: Side, stat: StatName | 'accuracy' | 'evasion', delta: number): boolean {
-    if (stat === 'hp') return false;
-    const state = this.team(side).state;
-    const key = stat as keyof ActiveState['boosts'];
-    const before = state.boosts[key];
-    const after = clampStage(before + delta);
-    const label = STAT_LABEL[stat] ?? { name: stat, article: 'o' as const };
-    const name = displayName(this.ctx, this.active(side));
-
-    if (before === after) {
-      this.text(
-        `${name} nao pode ${delta > 0 ? 'aumentar' : 'reduzir'} mais ${label.article} ${label.name}!`,
-      );
-      return false;
-    }
-
-    state.boosts[key] = after;
-    this.push({ t: 'boost', side, stat, delta: after - before });
-    const verb = delta > 0 ? 'aumentou' : 'reduziu';
-    const magnitude = Math.abs(delta) >= 2 ? 'muito ' : '';
-    this.text(`${name} ${verb} ${magnitude}${label.article} ${label.name}!`);
-    return true;
-  }
-
-  private applyStatus(side: Side, status: StatusName, move?: MoveData): boolean {
-    const pokemon = this.active(side);
-    if (pokemon.status) return false;
-
-    // Imunidades por tipo.
-    const types = speciesOf(this.ctx, pokemon).t;
-    if ((status === 'psn' || status === 'tox') && (types.includes('Poison') || types.includes('Steel'))) {
-      return false;
-    }
-    if (status === 'brn' && types.includes('Fire')) return false;
-    if (status === 'frz' && types.includes('Ice')) return false;
-    if (status === 'par' && types.includes('Electric')) return false;
-
-    const ability = this.abilityOf(side);
-    if (ability === 'limber' && status === 'par') return false;
-    if (ability === 'insomnia' && status === 'slp') return false;
-    if (ability === 'immunity' && (status === 'psn' || status === 'tox')) return false;
-    if (ability === 'waterveil' && status === 'brn') return false;
-
-    pokemon.status = status;
-    if (status === 'slp') pokemon.sleepTurns = this.rng.range(1, 3);
-    this.push({ t: 'status', side, status });
-    this.text(`${displayName(this.ctx, pokemon)} ${STATUS_LABEL[status]}!`);
-    void move;
-    return true;
-  }
-
-  private applySecondary(side: Side, move: MoveData): void {
-    const secondary = move.secondary;
-    if (!secondary) return;
-    if (this.rng.next() * 100 >= secondary.chance) return;
-
-    const targetSide = this.other(side);
-    if (secondary.status) this.applyStatus(targetSide, secondary.status, move);
-    if (secondary.volatile === 'flinch') this.team(targetSide).state.flinched = true;
-    if (secondary.volatile === 'confusion') {
-      const state = this.team(targetSide).state;
-      if (state.confusionTurns === 0) {
-        state.confusionTurns = this.rng.range(2, 5);
-        this.text(`${displayName(this.ctx, this.active(targetSide))} ficou confuso!`);
-      }
-    }
-    if (secondary.boosts) {
-      for (const [stat, delta] of Object.entries(secondary.boosts)) {
-        this.applyBoost(targetSide, stat as StatName, delta as number);
-      }
-    }
-    if (secondary.self) {
-      for (const [stat, delta] of Object.entries(secondary.self)) {
-        this.applyBoost(side, stat as StatName, delta as number);
-      }
-    }
-  }
-
-  private applyDrainAndRecoil(side: Side, move: MoveData, damage: number): void {
-    const attacker = this.active(side);
-    if (move.drain && damage > 0) {
-      const max = maxHp(this.ctx, attacker);
-      const healed = Math.min(max - attacker.hp, Math.floor((damage * move.drain[0]) / move.drain[1]));
-      if (healed > 0) {
-        attacker.hp += healed;
-        this.push({ t: 'heal', side, amount: healed, hp: attacker.hp, maxHp: max });
-        this.text(`${displayName(this.ctx, attacker)} drenou energia!`);
-      }
-    }
-    if (move.recoil && damage > 0) {
-      const recoil = Math.max(1, Math.floor((damage * move.recoil[0]) / move.recoil[1]));
-      attacker.hp = Math.max(0, attacker.hp - recoil);
-      this.push({
-        t: 'damage',
-        side,
-        amount: recoil,
-        hp: attacker.hp,
-        maxHp: maxHp(this.ctx, attacker),
-        effectiveness: 'normal',
-        crit: false,
-      });
-      this.text(`${displayName(this.ctx, attacker)} sofreu com o recuo.`);
-    }
-  }
-
-  private hitCount(move: MoveData): number {
-    if (!move.multihit) return 1;
-    if (typeof move.multihit === 'number') return move.multihit;
-    const [min, max] = move.multihit;
-    if (min === 2 && max === 5) {
-      // Distribuicao da Geracao 5: 2 e 3 golpes em 35% cada.
-      const roll = this.rng.next();
-      return roll < 0.35 ? 2 : roll < 0.7 ? 3 : roll < 0.85 ? 4 : 5;
-    }
-    return this.rng.range(min, max);
-  }
-
-  // --- Habilidades ----------------------------------------------------------
-
-  private abilityOf(side: Side): string {
-    return this.active(side).ability.toLowerCase().replace(/[^a-z]/g, '');
-  }
-
-  private onSendOut(side: Side): void {
-    const ability = this.abilityOf(side);
-    if (ability === 'intimidate') {
-      this.text(`${displayName(this.ctx, this.active(side))} intimidou o oponente!`);
-      this.applyBoost(this.other(side), 'atk', -1);
-    }
-  }
-
-  /** Levitate, Volt Absorb, Water Absorb e Flash Fire. */
-  private absorbedByAbility(defenderSide: Side, move: MoveData): boolean {
-    const ability = this.abilityOf(defenderSide);
-    const defender = this.active(defenderSide);
-
-    if (ability === 'levitate' && move.t === 'Ground') {
-      this.text(`${displayName(this.ctx, defender)} flutua e nao foi atingido!`);
-      return true;
-    }
-    const absorbs =
-      (ability === 'voltabsorb' && move.t === 'Electric') ||
-      (ability === 'waterabsorb' && move.t === 'Water');
-    if (absorbs) {
-      const max = maxHp(this.ctx, defender);
-      const healed = Math.min(max - defender.hp, Math.floor(max / 4));
-      if (healed > 0) {
-        defender.hp += healed;
-        this.push({ t: 'heal', side: defenderSide, amount: healed, hp: defender.hp, maxHp: max });
-      }
-      this.text(`${displayName(this.ctx, defender)} absorveu o golpe!`);
-      return true;
-    }
-    if (ability === 'flashfire' && move.t === 'Fire') {
-      this.text(`${displayName(this.ctx, defender)} absorveu as chamas!`);
-      return true;
-    }
-    return false;
-  }
-
-  /** Static, Flame Body e Poison Point respondem a golpes de contato. */
-  private contactAbilities(side: Side, move: MoveData): void {
-    if (!move.contact) return;
-    const defenderSide = this.other(side);
-    const ability = this.abilityOf(defenderSide);
-    if (this.rng.next() >= 0.3) return;
-    if (ability === 'static') this.applyStatus(side, 'par');
-    else if (ability === 'flamebody') this.applyStatus(side, 'brn');
-    else if (ability === 'poisonpoint') this.applyStatus(side, 'psn');
-  }
-
-  /** Overgrow e companhia: +50% no tipo quando o HP esta baixo. */
-  private boostedMove(side: Side, move: MoveData): MoveData {
-    const pokemon = this.active(side);
-    if (pokemon.hp > maxHp(this.ctx, pokemon) / 3) return move;
-    const ability = this.abilityOf(side);
-    const pairs: Record<string, string> = {
-      overgrow: 'Grass',
-      blaze: 'Fire',
-      torrent: 'Water',
-      swarm: 'Bug',
-    };
-    if (pairs[ability] !== move.t) return move;
-    return { ...move, bp: Math.floor(move.bp * 1.5) };
-  }
-
-  // --- Fim de turno ---------------------------------------------------------
-
-  private endOfTurn(): void {
-    this.player.state.protected = false;
-    this.foe.state.protected = false;
-
-    for (const side of ['player', 'foe'] as Side[]) {
-      const pokemon = this.active(side);
-      if (isFainted(pokemon)) continue;
-      const max = maxHp(this.ctx, pokemon);
-
-      if (pokemon.status === 'brn' || pokemon.status === 'psn') {
-        const damage = Math.max(1, Math.floor(max / 8));
-        pokemon.hp = Math.max(0, pokemon.hp - damage);
-        this.push({
-          t: 'damage',
-          side,
-          amount: damage,
-          hp: pokemon.hp,
-          maxHp: max,
-          effectiveness: 'normal',
-          crit: false,
-        });
-        this.text(
-          `${displayName(this.ctx, pokemon)} ${pokemon.status === 'brn' ? 'sofre com a queimadura' : 'sofre com o veneno'}.`,
-        );
-      }
-    }
-    this.checkFaints();
-  }
-
-  private checkFaints(): void {
-    for (const side of ['foe', 'player'] as Side[]) {
-      const pokemon = this.active(side);
-      if (!isFainted(pokemon)) continue;
-      this.push({ t: 'faint', side });
-      this.text(`${displayName(this.ctx, pokemon)} desmaiou!`);
-
-      if (side === 'foe') {
-        this.awardExp(pokemon);
-        const next = firstHealthy(this.foe.party);
-        if (next < 0) {
-          this.finish('win');
-          return;
-        }
-        this.foe.activeIndex = next;
-        this.foe.state = freshActiveState();
-        this.text(
-          `${this.config.foeName ?? 'O oponente'} enviou ${displayName(this.ctx, this.active('foe'))}!`,
-        );
-        this.push(this.sendOutEvent('foe', next));
-        this.onSendOut('foe');
-      } else {
-        const next = firstHealthy(this.player.party);
-        if (next < 0) {
-          this.finish('loss');
-          return;
-        }
-        this.awaitingSwitch = true;
-        this.push({ t: 'prompt', kind: 'chooseSwitch' });
-      }
-    }
-  }
-
-  private awardExp(defeated: Pokemon): void {
-    const participants = this.player.party.filter(
-      (p) => this.participants.has(p.uid) && !isFainted(p),
-    );
-    if (participants.length === 0) return;
+    if (participants.length === 0) return events;
 
     for (const pokemon of participants) {
       if (pokemon.level >= MAX_LEVEL) continue;
+      const index = this.player.party.indexOf(pokemon);
       const gained = expGained(this.ctx, defeated, pokemon.level, {
         trainerBattle: this.config.kind === 'trainer',
         participants: participants.length,
@@ -913,39 +651,49 @@ export class Battle {
       pokemon.exp += gained;
 
       const growth = speciesOf(this.ctx, pokemon).growth;
+      const tracked = this.reader.healthOf('player', index);
+      let hp = tracked?.hp ?? pokemon.hp;
       let leveledUp = false;
       while (pokemon.level < MAX_LEVEL && pokemon.exp >= expForLevel(growth, pokemon.level + 1)) {
         const beforeMax = maxHp(this.ctx, pokemon);
         pokemon.level++;
         leveledUp = true;
         // Subir de nivel aumenta o HP maximo e o atual junto.
-        pokemon.hp += maxHp(this.ctx, pokemon) - beforeMax;
-        this.text(`${displayName(this.ctx, pokemon)} subiu para o nivel ${pokemon.level}!`);
+        hp += maxHp(this.ctx, pokemon) - beforeMax;
+        events.push({ t: 'text', text: `${displayName(this.ctx, pokemon)} subiu para o nivel ${pokemon.level}!` });
 
         for (const moveId of movesLearnedAt(this.ctx, pokemon.species, pokemon.level)) {
           if (pokemon.moves.some((m) => m.id === moveId)) continue;
           if (pokemon.moves.length < MOVE_SLOTS) {
             pokemon.moves.push(makeMoveSlot(this.ctx, moveId));
-            this.push({ t: 'learnMove', uid: pokemon.uid, move: moveId });
-            this.text(`${displayName(this.ctx, pokemon)} aprendeu ${this.ctx.moves[moveId]?.n ?? moveId}!`);
+            this.learnInSim(index, moveId);
+            events.push({ t: 'learnMove', uid: pokemon.uid, move: moveId });
+            events.push({
+              t: 'text',
+              text: `${displayName(this.ctx, pokemon)} aprendeu ${this.ctx.moves[moveId]?.n ?? moveId}!`,
+            });
           }
         }
 
         const evolution = evolutionAt(this.ctx, pokemon);
         if (evolution !== null) {
-          this.push({ t: 'evolve', uid: pokemon.uid, from: pokemon.species, to: evolution });
+          events.push({ t: 'evolve', uid: pokemon.uid, from: pokemon.species, to: evolution });
         }
       }
 
-      this.push({
+      if (leveledUp) this.levelUpInSim(index, pokemon);
+      const max = maxHp(this.ctx, pokemon);
+      if (leveledUp) this.reader.setHealth('player', index, hp, max);
+
+      events.push({
         t: 'exp',
         uid: pokemon.uid,
         gained,
         level: pokemon.level,
         leveledUp,
         progress: expProgress(this.ctx, pokemon),
-        hp: pokemon.hp,
-        maxHp: maxHp(this.ctx, pokemon),
+        hp,
+        maxHp: max,
       });
     }
 
@@ -957,30 +705,60 @@ export class Battle {
         pokemon.evs[i] = Math.min(252, pokemon.evs[i] + (yields[i] ?? 0));
       }
     }
+    return events;
   }
 
-  private finish(outcome: BattleOutcome): void {
+  /** O Pokemon do simulador sobe junto: nivel, atributos e HP maximo. */
+  private levelUpInSim(index: number, pokemon: Pokemon): void {
+    const simPokemon = this.simPokemon('player', index);
+    if (!simPokemon) return;
+    (simPokemon as { level: number }).level = pokemon.level;
+    simPokemon.set.level = pokemon.level;
+    const stats = this.sim.spreadModify(simPokemon.species.baseStats, simPokemon.set);
+    simPokemon.baseStoredStats = stats;
+    if (!simPokemon.transformed) {
+      for (const stat of ['atk', 'def', 'spa', 'spd', 'spe'] as const) simPokemon.storedStats[stat] = stats[stat];
+    }
+    const newMax = statValue(this.ctx, pokemon, 'hp');
+    const gained = newMax - simPokemon.maxhp;
+    simPokemon.baseMaxhp = newMax;
+    simPokemon.maxhp = newMax;
+    if (simPokemon.hp > 0) simPokemon.hp = Math.min(newMax, simPokemon.hp + gained);
+  }
+
+  private learnInSim(index: number, moveId: string): void {
+    const simPokemon = this.simPokemon('player', index);
+    const move = Dex.moves.get(moveId);
+    if (!simPokemon || !move.exists) return;
+    const slot = makeMoveSlot(this.ctx, moveId);
+    const entry = {
+      move: move.name,
+      id: move.id,
+      pp: slot.pp,
+      maxpp: slot.maxPp,
+      target: move.target,
+      disabled: false,
+      used: false,
+    };
+    simPokemon.baseMoveSlots.push(entry);
+    if (!simPokemon.transformed) simPokemon.moveSlots.push(entry);
+    simPokemon.set.moves.push(move.name);
+  }
+
+  private finish(outcome: BattleOutcome, events: BattleEvent[]): void {
     this.outcome = outcome;
-    this.push({ t: 'end', outcome });
+    this.awaitingSwitch = false;
+    events.push({ t: 'end', outcome });
   }
 
-  // --- Utilidades -----------------------------------------------------------
-
-  private push(event: BattleEvent): void {
-    this.events.push(event);
-  }
-
-  private text(text: string): void {
-    this.events.push({ t: 'text', text });
-  }
+  // --- IA -------------------------------------------------------------------
 
   /** Usado pela IA: quanto este golpe machucaria o alvo. */
   estimateDamage(side: Side, moveId: string): number {
     const move = this.ctx.moves[moveId];
     if (!move || move.cat === 'Status') return 0;
     const attacker = this.active(side);
-    const defenderSide = this.other(side);
-    const defender = this.active(defenderSide);
+    const defender = this.active(this.other(side));
     const effectiveness = typeEffectiveness(this.chart, move.t, speciesOf(this.ctx, defender).t);
     if (effectiveness === 0) return 0;
 
@@ -994,6 +772,26 @@ export class Battle {
     const stab = speciesOf(this.ctx, attacker).t.includes(move.t) ? 1.5 : 1;
     return base * stab * effectiveness * ((move.acc ?? 100) / 100);
   }
+}
+
+/**
+ * Registra a condicao de "passar a vez" nos dados do simulador. Ela trava a
+ * escolha no golpe vazio de recarga e cancela a acao antes de qualquer
+ * mensagem, entao o log nao mostra nada.
+ */
+function registerSkipCondition(sim: SimBattle): void {
+  const conditions = sim.dex.data.Conditions as Record<string, unknown>;
+  if (conditions[SKIP_ID]) return;
+  conditions[SKIP_ID] = {
+    // O simulador tira o id do nome: os dois precisam bater.
+    name: 'PD Skip Turn',
+    onBeforeMovePriority: 200,
+    onBeforeMove(this: unknown, pokemon: SimPokemon) {
+      pokemon.removeVolatile(SKIP_ID);
+      return null;
+    },
+    onLockMove: 'recharge',
+  };
 }
 
 export function firstHealthy(party: Pokemon[]): number {

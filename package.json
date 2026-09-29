@@ -1,7 +1,7 @@
 {
   "name": "pokedeluge",
   "private": true,
-  "version": "0.5.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "RPG de Pokemon jogavel no navegador, PWA mobile-first",
   "scripts": {
@@ -12,13 +12,16 @@
     "assets:world": "tsx tools/build-world.ts",
     "assets:dex": "tsx tools/build-dex.ts",
     "assets:sprites": "tsx tools/prefetch-sprites.ts",
+    "assets:anims": "tsx tools/build-showdown-anims.ts",
     "test": "vitest run",
     "test:update": "tsx tools/test-update.ts",
     "test:capture": "tsx tools/test-capture.ts",
+    "test:anims": "tsx tools/test-battle-anims.ts",
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@pkmn/sim": "^0.10.11",
     "idb": "^8.0.3",
     "react": "^19.1.1",
     "react-dom": "^19.1.1",

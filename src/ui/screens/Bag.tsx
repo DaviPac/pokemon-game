@@ -3,7 +3,7 @@
  */
 import { useState } from 'react';
 import { itemInfo, type ItemCategory } from '../../game/data/items.js';
-import { BATTLE_ITEMS } from '../../game/battle/engine.js';
+import { BATTLE_ITEMS } from '../../game/battle/items.js';
 import {
   displayName,
   isFainted,

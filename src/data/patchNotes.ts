@@ -17,6 +17,33 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.6.0',
+    date: '2026-09-29',
+    title: 'Batalhas com o motor do Pokemon Showdown',
+    changes: [
+      {
+        kind: 'novo',
+        text: 'As batalhas agora rodam no simulador do Pokemon Showdown: dano, precisao, criticos, habilidades, itens segurados, clima e os efeitos de todos os golpes seguem as regras de verdade.',
+      },
+      {
+        kind: 'novo',
+        text: 'Cada golpe tem a animacao do Showdown, tocada no campo 3D: o Ember viaja ate o alvo, as espadas giram no Swords Dance, o Earthquake sacode o campo e o Fly leva o Pokemon para o ceu ate o turno seguinte.',
+      },
+      {
+        kind: 'novo',
+        text: 'Golpes de dois turnos, U-turn, Roar, confusao, sono e veneno funcionam como nos jogos, com animacao propria para cada status e o clima tingindo o cenario.',
+      },
+      {
+        kind: 'melhoria',
+        text: 'O menu de golpes mostra o que o simulador permite: golpe desativado fica apagado, e preso num golpe de varios turnos o Lutar segue sozinho.',
+      },
+      {
+        kind: 'correcao',
+        text: 'Textos de atributo mais naturais ("A Defesa de Pidgey caiu!") e o selvagem ou o adversario identificados em cada fala.',
+      },
+    ],
+  },
+  {
     version: '0.5.0',
     date: '2026-09-20',
     title: 'Kanto falando portugues',

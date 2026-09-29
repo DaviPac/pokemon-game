@@ -1,28 +1,12 @@
-import type { BoostTable, StatName, StatusName } from '../data/types.js';
+import type { StatName, StatusName } from '../data/types.js';
 import type { Pokemon } from '../pokemon/pokemon.js';
 
 export type Side = 'player' | 'foe';
 
-/** Estado volatil de um lado, zerado quando o Pokemon troca. */
-export interface ActiveState {
-  boosts: Required<Pick<BoostTable, 'atk' | 'def' | 'spa' | 'spd' | 'spe' | 'accuracy' | 'evasion'>>;
-  confusionTurns: number;
-  flinched: boolean;
-  protected: boolean;
-  /** Turnos seguidos usando o mesmo golpe, para Protect e afins. */
-  consecutiveProtect: number;
-  /** Ja esteve em campo neste combate? Conta para dividir a EXP. */
-  participated: boolean;
-  chargingMove: string | null;
-  lastMove: string | null;
-  substituteHp: number;
-  trapped: boolean;
-}
-
 export interface BattleTeam {
   party: Pokemon[];
+  /** Quem esta em campo, pela posicao na equipe. */
   activeIndex: number;
-  state: ActiveState;
 }
 
 export type BattleKind = 'wild' | 'trainer';
@@ -59,13 +43,38 @@ export type BattleEvent =
       /** Modo de entrada: pela bola do jogador, do treinador, ou selvagem. */
       entrance: 'player' | 'trainer' | 'wild';
     }
-  | { t: 'useMove'; side: Side; move: string }
-  | { t: 'damage'; side: Side; amount: number; hp: number; maxHp: number; effectiveness: Effectiveness; crit: boolean }
+  | {
+      t: 'useMove';
+      side: Side;
+      move: string;
+      /** Quem o golpe mira; nulo quando nao ha alvo (ou e o proprio usuario). */
+      target?: Side | null;
+      /** O golpe saiu, mas errou: a animacao vai no vazio. */
+      miss?: boolean;
+      /** Sem animacao, como no turno em que um golpe carrega. */
+      still?: boolean;
+    }
+  /** Primeiro turno de golpes que carregam (Solar Beam, Fly...). */
+  | { t: 'prepare'; side: Side; move: string; target: Side | null }
+  /** Animacao de status: veneno, sono, confusao... */
+  | { t: 'anim'; side: Side; anim: string }
+  | { t: 'weather'; weather: string | null }
+  | {
+      t: 'damage';
+      side: Side;
+      amount: number;
+      hp: number;
+      maxHp: number;
+      effectiveness: Effectiveness;
+      crit: boolean;
+      /** De onde veio o dano quando nao foi um golpe direto (psn, recoil...). */
+      cause?: string;
+    }
   | { t: 'heal'; side: Side; amount: number; hp: number; maxHp: number }
   | { t: 'miss'; side: Side }
   | { t: 'status'; side: Side; status: StatusName | null }
   | { t: 'boost'; side: Side; stat: StatName | 'accuracy' | 'evasion'; delta: number }
-  | { t: 'faint'; side: Side }
+  | { t: 'faint'; side: Side; uid: string }
   | { t: 'ball'; shakes: number; caught: boolean; ball: string }
   | { t: 'caught'; species: number }
   | {
@@ -85,26 +94,3 @@ export type BattleEvent =
   | { t: 'end'; outcome: BattleOutcome };
 
 export type BattleOutcome = 'win' | 'loss' | 'caught' | 'fled' | 'foeFled';
-
-export const EMPTY_BOOSTS = (): ActiveState['boosts'] => ({
-  atk: 0,
-  def: 0,
-  spa: 0,
-  spd: 0,
-  spe: 0,
-  accuracy: 0,
-  evasion: 0,
-});
-
-export const freshActiveState = (): ActiveState => ({
-  boosts: EMPTY_BOOSTS(),
-  confusionTurns: 0,
-  flinched: false,
-  protected: false,
-  consecutiveProtect: 0,
-  participated: true,
-  chargingMove: null,
-  lastMove: null,
-  substituteHp: 0,
-  trapped: false,
-});

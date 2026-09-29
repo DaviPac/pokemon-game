@@ -1,32 +1,27 @@
 /**
  * IA do oponente. Um selvagem ataca quase ao acaso; um treinador escolhe o
- * golpe mais eficiente e troca quando esta em desvantagem clara.
+ * golpe mais eficiente e troca quando esta em desvantagem clara. As regras
+ * sao do simulador; aqui so se decide o que pedir a ele.
  */
 import type { RNG } from '../core/rng.js';
-import type { TypeChart } from '../data/types.js';
 import type { PokemonContext } from '../pokemon/pokemon.js';
 import { isFainted, maxHp } from '../pokemon/pokemon.js';
 import type { Battle } from './engine.js';
 import type { BattleAction } from './types.js';
 
-export function chooseFoeAction(
-  ctx: PokemonContext,
-  chart: TypeChart,
-  rng: RNG,
-  battle: Battle,
-): BattleAction {
-  void chart;
+export function chooseFoeAction(ctx: PokemonContext, rng: RNG, battle: Battle): BattleAction {
   const foe = battle.active('foe');
   const usable = foe.moves
     .map((slot, index) => ({ slot, index }))
-    .filter(({ slot }) => slot.pp > 0 && ctx.moves[slot.id]);
+    .filter(({ slot, index }) => ctx.moves[slot.id] && battle.foeMoveUsable(index));
 
+  // Sem golpe utilizavel o simulador decide sozinho (Struggle, golpe preso).
   if (usable.length === 0) return { kind: 'move', index: 0 };
 
   const trainer = battle.config.kind === 'trainer';
 
   // Treinador em apuros troca para alguem com vantagem, de vez em quando.
-  if (trainer && foe.hp < maxHp(ctx, foe) * 0.25 && rng.chance(0.35)) {
+  if (trainer && !battle.foeTrapped && foe.hp < maxHp(ctx, foe) * 0.25 && rng.chance(0.35)) {
     const alternative = battle.foe.party.findIndex(
       (p, i) => i !== battle.foe.activeIndex && !isFainted(p),
     );

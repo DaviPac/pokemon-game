@@ -4,7 +4,8 @@
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MoveCategory, PokemonType, StatusName } from '../../game/data/types.js';
-import { BATTLE_ITEMS, type Battle } from '../../game/battle/engine.js';
+import type { Battle } from '../../game/battle/engine.js';
+import { BATTLE_ITEMS } from '../../game/battle/items.js';
 import { BALLS } from '../../game/battle/capture.js';
 import type { BattleEvent, BattleOutcome, Side } from '../../game/battle/types.js';
 import {
@@ -31,6 +32,7 @@ import {
   wait,
 } from './animations.js';
 import { HPBar } from './HPBar.js';
+import { loadTables, playSceneAnim, resetScene, type SceneAnim } from './showdown/scene.js';
 
 type Menu = 'main' | 'moves' | 'bag' | 'party' | 'none';
 
@@ -66,7 +68,10 @@ export function BattleScreen({
   playerLevel,
 }: Props) {
   const stageRef = useRef<HTMLDivElement>(null);
+  const fieldRef = useRef<HTMLDivElement>(null);
   const worldRef = useRef<HTMLDivElement>(null);
+  const fxRef = useRef<HTMLDivElement>(null);
+  const bgfxRef = useRef<HTMLDivElement>(null);
   const playerSpriteRef = useRef<HTMLImageElement>(null);
   const foeSpriteRef = useRef<HTMLImageElement>(null);
   const busyRef = useRef(false);
@@ -88,8 +93,36 @@ export function BattleScreen({
   const [activeSlot, setActiveSlot] = useState(battle.player.activeIndex);
   // Quem ja caiu na animacao; os pontinhos da equipe seguem isto, nao o motor.
   const [faintedUids, setFaintedUids] = useState<string[]>([]);
+  /** Clima em campo (chuva, sol...), que tinge o cenario enquanto durar. */
+  const [weather, setWeather] = useState<string | null>(null);
 
   const spriteRef = (side: Side) => (side === 'player' ? playerSpriteRef : foeSpriteRef);
+
+  /**
+   * Animacao do Showdown para golpes e status. Devolve false quando nao ha
+   * uma (ou as animacoes estao desligadas), e a tela usa a propria.
+   */
+  const showdownAnim = useCallback(
+    async (request: SceneAnim): Promise<boolean> => {
+      const stage = stageRef.current;
+      const fx = fxRef.current;
+      const bgfx = bgfxRef.current;
+      if (!animOptions.enabled || !stage || !fx || !bgfx || reducedMotion()) return false;
+      return playSceneAnim(
+        {
+          stage,
+          fx,
+          bgfx,
+          field: fieldRef.current,
+          player: playerSpriteRef.current,
+          foe: foeSpriteRef.current,
+        },
+        request,
+        animOptions.speed,
+      ).catch(() => false);
+    },
+    [animOptions.enabled, animOptions.speed],
+  );
 
   /**
    * O HUD segue os eventos, nao o motor: quando o turno chega aqui ele ja foi
@@ -136,6 +169,8 @@ export function BattleScreen({
 
           case 'sendOut': {
             const pokemon = battle.team(event.side).party[event.index];
+            // Quem saiu levou junto qualquer pose presa (Fly, Dig...).
+            resetScene(event.side);
             if (event.side === 'player') setActiveSlot(event.index);
             const view = viewOf(ctx, pokemon, event.side === 'player');
             // Identidade vem do Pokemon; HP e status, do instante do evento.
@@ -159,20 +194,48 @@ export function BattleScreen({
           }
 
           case 'useMove': {
+            // Turno de carga: o golpe e anunciado, mas a animacao e a do preparo.
+            if (event.still) break;
             const move = ctx.moves[event.move];
-            if (move) {
-              audio.move(move.t as PokemonType, move.cat as MoveCategory);
-              pushCamera(worldRef.current, animOptions);
+            const type = (move?.t ?? 'Normal') as PokemonType;
+            const category = (move?.cat ?? 'Physical') as MoveCategory;
+            audio.move(type, category);
+            pushCamera(worldRef.current, animOptions);
+            const played = await showdownAnim({
+              kind: 'move',
+              move: event.move,
+              side: event.side,
+              target: event.target ?? null,
+              miss: event.miss,
+            });
+            if (!played) {
               await playMove(
                 spriteRef(event.side).current,
                 spriteRef(event.side === 'player' ? 'foe' : 'player').current,
                 stageRef.current,
-                { type: move.t as PokemonType, category: move.cat as MoveCategory },
+                { type, category },
                 animOptions,
               );
             }
             break;
           }
+
+          case 'prepare':
+            await showdownAnim({
+              kind: 'prepare',
+              move: event.move,
+              side: event.side,
+              target: event.target,
+            });
+            break;
+
+          case 'anim':
+            await showdownAnim({ kind: 'status', anim: event.anim, side: event.side });
+            break;
+
+          case 'weather':
+            setWeather(event.weather);
+            break;
 
           case 'damage': {
             await playHit(
@@ -217,11 +280,11 @@ export function BattleScreen({
             break;
 
           case 'faint': {
-            const fallen = battle.active(event.side);
+            resetScene(event.side);
             audio.sfx('faint');
             await playFaint(spriteRef(event.side).current, animOptions);
             patch(event.side, { hp: 0 });
-            setFaintedUids((current) => [...current, fallen.uid]);
+            setFaintedUids((current) => [...current, event.uid]);
             if (winning && event.side === 'foe' && !cueRef.current) {
               cueRef.current = audio.playCue(
                 battle.config.kind === 'trainer' ? 'mus_victory_trainer' : 'mus_victory_wild',
@@ -273,6 +336,7 @@ export function BattleScreen({
 
           case 'end':
             setFinished(event.outcome);
+            resetScene();
             busyRef.current = false;
             await wait(600 / animOptions.speed);
             // Vitoria: a tela so sai depois do tema. Captura: quem espera o
@@ -289,13 +353,26 @@ export function BattleScreen({
       busyRef.current = false;
       if (!battle.outcome) setMenu('main');
     },
-    [animOptions, battle, ctx, holdForMusic, onFinish, patch],
+    [animOptions, battle, ctx, holdForMusic, onFinish, patch, showdownAnim],
   );
 
-  // Abertura: a cortina varre a tela antes do primeiro texto.
+  // Os testes de tela leem o motor direto, em desenvolvimento.
   useEffect(() => {
+    if (!import.meta.env.DEV) return;
+    (window as unknown as { __battle?: Battle }).__battle = battle;
+  }, [battle]);
+
+  // Abertura: a cortina varre a tela antes do primeiro texto. O StrictMode do
+  // React roda os efeitos duas vezes em desenvolvimento; a segunda abertura
+  // devolvia o menu antes da primeira terminar, e o toque em Lutar se perdia.
+  const openedRef = useRef(false);
+  useEffect(() => {
+    if (openedRef.current) return;
+    openedRef.current = true;
     void (async () => {
       void audio.playMusic(battleSong(battle.config.kind, battle.config.foeName));
+      // As tabelas de animacao do Showdown descem enquanto a cortina passa.
+      void loadTables().catch(() => undefined);
       // A cortina varre a tela enquanto a camera se aproxima do campo.
       void playFieldIntro(worldRef.current, animOptions);
       await playBattleIntro(stageRef.current, animOptions);
@@ -312,6 +389,9 @@ export function BattleScreen({
 
   const active = battle.active('player');
   const foeActive = battle.active('foe');
+  const moveOptions = menu === 'moves' ? battle.moveOptions() : [];
+  /** Preso num golpe de varios turnos: o turno anda sozinho. */
+  const locked = menu === 'main' && battle.locked;
   const terrain = environment.isWater ? 'water' : environment.isCave ? 'cave' : 'grass';
 
   return (
@@ -324,7 +404,7 @@ export function BattleScreen({
           transforma em elipses. Os Pokemon ficam em pe por cima, como os
           cartazes que a geracao 5 usava sobre o cenario 3D.
         */}
-        <div className={`field field-${terrain}`}>
+        <div className={`field field-${terrain}`} ref={fieldRef}>
           <div className="field-world" ref={worldRef}>
             <div className="field-sky" />
             <div className="field-scenery" />
@@ -335,7 +415,10 @@ export function BattleScreen({
               <div className="field-platform field-platform-player" />
             </div>
           </div>
+          {weather && <div className={`field-weather field-weather-${weather}`} />}
         </div>
+        {/* Fundos das animacoes do Showdown: por tras dos Pokemon. */}
+        <div className="battle-bgfx" ref={bgfxRef} />
 
         <div className="battle-slot battle-slot-foe">
           <img
@@ -358,6 +441,9 @@ export function BattleScreen({
           />
           <span className="battle-shadow" />
         </div>
+
+        {/* Efeitos dos golpes: por cima dos Pokemon, por baixo do HUD. */}
+        <div className="battle-fx" ref={fxRef} />
 
         <div className="battle-hud battle-hud-foe">
           <HPBar
@@ -415,7 +501,9 @@ export function BattleScreen({
               className="battle-action action-fight"
               onClick={() => {
                 audio.sfx('select');
-                setMenu('moves');
+                // Preso num golpe (Outrage, Solar Beam...): o turno so continua.
+                if (locked) act(() => battle.takeTurn({ kind: 'move', index: 0 }));
+                else setMenu('moves');
               }}
             >
               Lutar
@@ -423,6 +511,7 @@ export function BattleScreen({
             <button
               type="button"
               className="battle-action action-bag"
+              disabled={locked}
               onClick={() => {
                 audio.sfx('select');
                 setMenu('bag');
@@ -433,6 +522,7 @@ export function BattleScreen({
             <button
               type="button"
               className="battle-action action-party"
+              disabled={locked}
               onClick={() => {
                 audio.sfx('select');
                 setMenu('party');
@@ -443,6 +533,7 @@ export function BattleScreen({
             <button
               type="button"
               className="battle-action action-run"
+              disabled={locked}
               onClick={() => act(() => battle.takeTurn({ kind: 'run' }))}
             >
               Fugir
@@ -452,28 +543,29 @@ export function BattleScreen({
 
         {menu === 'moves' && (
           <div className="move-grid">
-            {active.moves.map((slot, index) => {
-              const move = ctx.moves[slot.id];
-              if (!move) return null;
-              const type = move.t as PokemonType;
+            {moveOptions.map((option) => {
+              const type = option.type;
+              const noPp = option.maxPp > 0 && option.pp <= 0;
               return (
                 <button
-                  key={slot.id}
+                  key={`${option.id}-${option.index}`}
                   type="button"
                   className="move-button"
                   style={{ borderColor: TYPE_COLORS[type] }}
-                  disabled={slot.pp <= 0}
-                  onClick={() => act(() => battle.takeTurn({ kind: 'move', index }))}
+                  disabled={option.disabled || noPp}
+                  onClick={() => act(() => battle.takeTurn({ kind: 'move', index: option.index }))}
                 >
-                  <span className="move-name">{move.n}</span>
+                  <span className="move-name">{option.name}</span>
                   <span className="move-meta">
                     <span className="type-chip" style={{ background: TYPE_COLORS[type] }}>
                       {TYPE_NAMES_PT[type]}
                     </span>
-                    <span className="move-cat">{CATEGORY_LABELS[move.cat]}</span>
-                    <span className="move-pp">
-                      {slot.pp}/{slot.maxPp}
-                    </span>
+                    <span className="move-cat">{CATEGORY_LABELS[option.category]}</span>
+                    {option.maxPp > 0 && (
+                      <span className="move-pp">
+                        {option.pp}/{option.maxPp}
+                      </span>
+                    )}
                   </span>
                 </button>
               );
@@ -528,7 +620,11 @@ export function BattleScreen({
           <div className="party-list">
             {battle.player.party.map((p, index) => {
               const hpMax = maxHp(ctx, p);
-              const disabled = isFainted(p) || index === battle.player.activeIndex;
+              // Preso (Mean Look, Wrap...) so troca quando o Pokemon cai.
+              const disabled =
+                isFainted(p) ||
+                index === battle.player.activeIndex ||
+                (!battle.awaitingSwitch && battle.trapped);
               return (
                 <button
                   key={p.uid}
@@ -569,6 +665,10 @@ export function BattleScreen({
       </span>
     </div>
   );
+}
+
+function reducedMotion(): boolean {
+  return typeof window !== 'undefined' && Boolean(window.matchMedia?.('(prefers-reduced-motion: reduce)').matches);
 }
 
 /** Lider de ginasio tem tema proprio; o resto segue selvagem ou treinador. */

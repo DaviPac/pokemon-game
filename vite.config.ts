@@ -1,9 +1,34 @@
 import { readFileSync } from 'node:fs';
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
 
 const pkg = JSON.parse(readFileSync('./package.json', 'utf8')) as { version: string };
+
+/**
+ * O simulador do Showdown carrega junto os learnsets de todas as geracoes, as
+ * tabelas de legalidade e as descricoes em ingles -- mais da metade do pacote.
+ * Nada disso participa de uma batalha (serve ao validador de times), entao no
+ * build esses modulos viram objetos vazios.
+ */
+function trimShowdownSim(): Plugin {
+  const sep = String.raw`[\\/]`;
+  const data = `@pkmn${sep}sim${sep}build${sep}esm${sep}data${sep}`;
+  const pattern = new RegExp(
+    `${data}(?:mods${sep}[^\\/]+${sep})?(?:learnsets|legality|pokemongo)\\.mjs$|${data}text${sep}[^\\/]+\\.mjs$`,
+  );
+  return {
+    name: 'trim-showdown-sim',
+    apply: 'build',
+    enforce: 'pre',
+    load(id) {
+      const file = id.split('?')[0];
+      if (!pattern.test(file)) return null;
+      const names = [...readFileSync(file, 'utf8').matchAll(/^export const (\w+)/gm)].map((m) => m[1]);
+      return names.map((name) => `export const ${name} = {};`).join('\n');
+    },
+  };
+}
 
 export default defineConfig({
   // A versao do package.json chega ao jogo: e ela que decide quando mostrar as
@@ -13,6 +38,7 @@ export default defineConfig({
     __BUILD_TIME__: JSON.stringify(new Date().toISOString()),
   },
   plugins: [
+    trimShowdownSim(),
     react(),
     VitePWA({
       registerType: 'prompt',
@@ -36,7 +62,7 @@ export default defineConfig({
       },
       workbox: {
         // Os mapas e tilesets de Kanto entram no precache: o jogo abre offline.
-        globPatterns: ['**/*.{js,css,html,png,json,woff2}'],
+        globPatterns: ['**/*.{js,css,html,png,jpg,json,woff2}'],
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         navigateFallback: '/index.html',
         // Versoes antigas saem do cache sozinhas: ninguem precisa limpar nada

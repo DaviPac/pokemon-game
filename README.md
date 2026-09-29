@@ -6,6 +6,8 @@ explorar, batalhas animadas e progressao que continua com o app fechado.
 
 - **Mundo**: Kanto inteira e fiel (420 mapas), convertida do decomp `pret/pokefirered`.
 - **Pokemon**: #1 a #721 (Gen 1 a 6), com sprites animados de Pokemon Black/White.
+- **Batalha**: o motor e o simulador do [Pokemon Showdown](https://pokemonshowdown.com)
+  (`@pkmn/sim`), com as animacoes de golpe do Showdown tocadas no campo 3D do jogo.
 - **Som**: as musicas originais do FireRed, tocadas por um sintetizador chiptune.
 - **Offline**: save local em IndexedDB, sem contas e sem servidor.
 - **Idioma**: interface em pt-BR.
@@ -28,6 +30,7 @@ um clone novo ja roda com `npm install && npm run dev`.
 | `npm run build` | Typecheck + build de producao |
 | `npm run assets` | Pipeline completo de assets |
 | `npm run test` | Testes do motor de jogo (Vitest) |
+| `npm run test:anims` | Confere as animacoes de golpe do Showdown num navegador real |
 | `npm run test:update` | Testa o ciclo de atualizacao do PWA num navegador real |
 | `npm run typecheck` | Só o typecheck |
 
@@ -60,6 +63,9 @@ Nada e inventado: tudo vem de projetos publicos, convertido em build.
 | Musicas (MIDI) | `pret/pokefirered` |
 | Traducao das falas para portugues | feita a mao, em `tools/i18n/dialogue.pt.json` |
 | Gritos dos Pokemon | `PokeAPI/cries` |
+| Regras de batalha (dano, golpes, habilidades, itens, clima) | `@pkmn/sim`, o simulador do Pokemon Showdown (MIT) |
+| Animacoes de golpe | `smogon/pokemon-showdown-client`, tabelas CC0/MIT |
+| Imagens dos efeitos dos golpes | `smogon/pokemon-showdown-client`, pasta `fx/` (CC0) |
 
 O pipeline fica em `tools/`:
 
@@ -75,11 +81,49 @@ O pipeline fica em `tools/`:
 - `build-music.ts` — le os MIDIs originais e os converte em notas com tempo em
   segundos, que o sintetizador WebAudio toca ao vivo.
 - `build-icons.ts` — desenha os icones do PWA.
+- `build-showdown-anims.ts` — traz as animacoes de golpe do Showdown para
+  `src/vendor/showdown/` e as imagens dos efeitos para `public/assets/fx/`,
+  conferindo antes que as licencas continuam as mesmas.
 - `preview-map.ts` — renderiza um mapa inteiro num PNG, util para conferir o pipeline.
 - `screenshot.ts` — abre o jogo num Chromium com viewport de celular.
 
 Os sprites de Pokemon sao carregados sob demanda de `raw.githubusercontent.com` e
 ficam em cache no service worker: cada Pokemon visto continua disponivel offline.
+
+## Batalha
+
+As regras sao as do Pokemon Showdown: o jogo roda o simulador dele (`@pkmn/sim`,
+a extracao para navegador do simulador do Showdown) no formato da Geracao 6, e
+cada turno sai como o log de protocolo do Showdown. `src/game/battle/protocol.ts`
+le esse log e o transforma nos eventos que a tela anima, com o texto de cada
+acontecimento em portugues. O que o simulador nao conhece continua sendo do jogo:
+a mochila, a Pokebola (formula de captura da Geracao 5/6), a fuga, a IA do
+oponente e a EXP de cada nocaute, que tambem sobe o nivel dentro do simulador.
+
+As animacoes de golpe sao as do cliente do Showdown. As tabelas originais
+descrevem cada golpe como chamadas a uma cena (`showEffect`, `anim`,
+`backgroundEffect`); `src/ui/battle/showdown/scene.ts` reimplementa essa cena
+com Web Animations sobre o campo 3D do jogo, mapeando o palco de 640x360 do
+Showdown para a posicao real dos sprites. Todas as 618 animacoes de golpe do
+jogo rodam sem erro nos dois lados do campo.
+
+O simulador pesa (os dados de todas as geracoes vem juntos): ele fica num
+pedaco separado do app, baixado quando o jogo comeca e guardado para uso
+offline. Learnsets, tabelas de legalidade e descricoes em ingles, que so servem
+ao validador de times, saem do build.
+
+### Licencas do Showdown
+
+- `@pkmn/sim` e o simulador do Pokemon Showdown: MIT.
+- O cliente do Showdown e AGPLv3 no todo, mas as animacoes tem licencas proprias
+  nos cabecalhos: `battle-animations-moves.ts` e CC0 e `battle-animations.ts` e
+  MIT (com a maior parte em CC0). Nenhum outro arquivo do cliente e usado.
+- As imagens da pasta `fx/` sao CC0, exceto `icicle.png` e `lightning.png`, de
+  Clint Bellanger, usadas sob CC-BY-SA 3.0
+  ([icicle-spell](http://opengameart.org/content/icicle-spell),
+  [lightning-shock-spell](http://opengameart.org/content/lightning-shock-spell)).
+  `rocks.png`, `rock1.png`, `rock2.png` (GPLv3) e `bone.png` nao sao
+  distribuidas: a cena usa `rock3.png` no lugar delas.
 
 ## Som
 

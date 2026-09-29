@@ -14,8 +14,10 @@ import {
   type PokemonContext,
 } from '../pokemon/pokemon.js';
 import { attemptCapture } from './capture.js';
-import { typeEffectiveness } from './damage.js';
+import { typeEffectiveness } from './effectiveness.js';
 import { Battle } from './engine.js';
+import { ProtocolReader } from './protocol.js';
+import type { BattleEvent } from './types.js';
 
 const DATA = join(process.cwd(), 'public', 'assets', 'data');
 
@@ -286,6 +288,194 @@ describe('batalha', () => {
     const events = battle.takeTurn({ kind: 'run' });
     expect(events.some((e) => e.t === 'text' && e.text.includes('treinador'))).toBe(true);
     expect(battle.outcome).toBeNull();
+  });
+});
+
+describe('batalha no simulador do Showdown', () => {
+  const texts = (events: BattleEvent[]) =>
+    events.flatMap((e) => (e.t === 'text' ? [e.text] : []));
+
+  it('comeca do HP, do status e do PP salvos', () => {
+    const player = make(4, 20, { moves: [{ id: 'scratch', pp: 7, maxPp: 35 }] });
+    player.hp = 11;
+    player.status = 'par';
+    const battle = new Battle(ctx, chart, new RNG(21), [player], [make(10, 5)], { kind: 'wild', canRun: true });
+    const opening = battle.start();
+    const sendOut = opening.find((e) => e.t === 'sendOut' && e.side === 'player');
+    expect(sendOut?.t === 'sendOut' && sendOut.hp).toBe(11);
+    expect(sendOut?.t === 'sendOut' && sendOut.status).toBe('par');
+    expect(battle.moveOptions()[0]).toMatchObject({ id: 'scratch', pp: 7, maxPp: 35 });
+
+    battle.takeTurn({ kind: 'move', index: 0 });
+    // Paralisado, ele pode perder a vez; se atacou, gastou um PP.
+    expect(player.moves[0].pp).toBeLessThanOrEqual(7);
+    expect(player.moves[0].pp).toBeGreaterThanOrEqual(6);
+  });
+
+  it('segue as habilidades do Showdown: Levitate ignora golpes de Terra', () => {
+    const player = make(27, 30, { moves: [{ id: 'earthquake', pp: 10, maxPp: 10 }] });
+    const gastly = make(92, 30, { ability: 'Levitate', moves: [{ id: 'lick', pp: 30, maxPp: 30 }] });
+    const battle = new Battle(ctx, chart, new RNG(4), [player], [gastly], { kind: 'wild', canRun: true });
+    battle.start();
+    const events = battle.takeTurn({ kind: 'move', index: 0 });
+    expect(events.some((e) => e.t === 'damage' && e.side === 'foe')).toBe(false);
+    expect(texts(events).some((t) => /Levitate|Nao afeta/.test(t))).toBe(true);
+  });
+
+  it('a Potion cura e o oponente ainda age no mesmo turno', () => {
+    const player = make(4, 12, { moves: [{ id: 'scratch', pp: 35, maxPp: 35 }] });
+    player.hp = 5;
+    const battle = new Battle(ctx, chart, new RNG(8), [player], [make(16, 4, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] })], {
+      kind: 'wild',
+      canRun: true,
+    });
+    battle.start();
+    const events = battle.takeTurn({ kind: 'item', item: 'potion' });
+    const heal = events.find((e) => e.t === 'heal' && e.side === 'player');
+    expect(heal?.t === 'heal' && heal.hp).toBe(Math.min(maxHp(ctx, player), 25));
+    // O jogador nao ataca: o unico golpe do turno e do oponente.
+    const moves = events.filter((e) => e.t === 'useMove');
+    expect(moves.map((e) => (e.t === 'useMove' ? e.side : ''))).toEqual(['foe']);
+    expect(player.moves[0].pp).toBe(35);
+  });
+
+  it('bola que falha passa a vez para o selvagem', () => {
+    const player = make(4, 12);
+    const foe = make(150, 70, { moves: [{ id: 'confusion', pp: 25, maxPp: 25 }] });
+    const battle = new Battle(ctx, chart, new RNG(2), [player], [foe], { kind: 'wild', canRun: true });
+    battle.start();
+    const events = battle.throwBall('pokeball', { playerLevel: 5, isCave: false, isWater: false, isNight: false });
+    const ball = events.find((e) => e.t === 'ball');
+    if (ball?.t === 'ball' && !ball.caught) {
+      expect(events.some((e) => e.t === 'useMove' && e.side === 'foe')).toBe(true);
+    }
+  });
+
+  it('nocaute pede troca, e a troca continua o combate', () => {
+    const weak = make(10, 2, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] });
+    const backup = make(4, 20, { moves: [{ id: 'scratch', pp: 35, maxPp: 35 }] });
+    const foe = make(68, 50, { moves: [{ id: 'karatechop', pp: 25, maxPp: 25 }] });
+    const battle = new Battle(ctx, chart, new RNG(6), [weak, backup], [foe], { kind: 'trainer', foeName: 'Rival', canRun: false });
+    battle.start();
+    const events = battle.takeTurn({ kind: 'move', index: 0 });
+    expect(events.some((e) => e.t === 'faint' && e.side === 'player')).toBe(true);
+    expect(events[events.length - 1]).toEqual({ t: 'prompt', kind: 'chooseSwitch' });
+    expect(battle.awaitingSwitch).toBe(true);
+
+    const next = battle.switchTo(1);
+    expect(next.some((e) => e.t === 'sendOut' && e.side === 'player' && e.index === 1)).toBe(true);
+    expect(battle.awaitingSwitch).toBe(false);
+    expect(battle.active('player')).toBe(backup);
+  });
+
+  it('quem ja chegou desmaiado nao entra, e a derrota vem quando todos caem', () => {
+    const fainted = make(1, 10);
+    fainted.hp = 0;
+    const last = make(10, 2, { moves: [{ id: 'tackle', pp: 35, maxPp: 35 }] });
+    const foe = make(68, 60, { moves: [{ id: 'karatechop', pp: 25, maxPp: 25 }] });
+    const battle = new Battle(ctx, chart, new RNG(1), [fainted, last], [foe], { kind: 'wild', canRun: true });
+    const opening = battle.start();
+    expect(opening.find((e) => e.t === 'sendOut' && e.side === 'player')).toMatchObject({ index: 1 });
+    const events = battle.takeTurn({ kind: 'move', index: 0 });
+    expect(battle.outcome).toBe('loss');
+    expect(events[events.length - 1]).toEqual({ t: 'end', outcome: 'loss' });
+  });
+
+  it('subir de nivel no meio da batalha vale para o simulador tambem', () => {
+    const player = make(6, 30, { moves: [{ id: 'flamethrower', pp: 15, maxPp: 15 }] });
+    player.exp = expForLevel(ctx.species['6'].growth, 31) - 1;
+    const foes = [make(10, 20), make(13, 20)];
+    const battle = new Battle(ctx, chart, new RNG(12), [player], foes, { kind: 'trainer', foeName: 'Inseto', canRun: false });
+    battle.start();
+    const events = battle.takeTurn({ kind: 'move', index: 0 });
+    const exp = events.find((e) => e.t === 'exp');
+    expect(exp?.t === 'exp' && exp.leveledUp).toBe(true);
+    expect(player.level).toBe(31);
+    // O HP maximo que o simulador informa daqui em diante e o do nivel novo.
+    const later = battle.takeTurn({ kind: 'move', index: 0 });
+    const hpEvent = later.find((e) => (e.t === 'damage' || e.t === 'heal') && e.side === 'player');
+    if (hpEvent && (hpEvent.t === 'damage' || hpEvent.t === 'heal')) expect(hpEvent.maxHp).toBe(maxHp(ctx, player));
+  });
+
+  it('nenhum texto deixa escapar o protocolo cru', () => {
+    for (let seed = 1; seed <= 6; seed++) {
+      const battle = new Battle(
+        ctx,
+        chart,
+        new RNG(seed),
+        [make(25, 18), make(1, 18)],
+        [make(74, 16), make(95, 17)],
+        { kind: 'trainer', foeName: 'Brock', canRun: false },
+      );
+      const all = [...battle.start()];
+      for (let i = 0; i < 40 && !battle.outcome; i++) {
+        if (battle.awaitingSwitch) {
+          all.push(...battle.switchTo(battle.player.party.findIndex((p) => p.hp > 0)));
+          continue;
+        }
+        all.push(...battle.takeTurn({ kind: 'move', index: i % 2 }));
+      }
+      expect(battle.outcome).not.toBeNull();
+      for (const text of texts(all)) {
+        expect(text).not.toMatch(/\||p[12][ab]?:|\bm\d\b|undefined|\[object/);
+      }
+    }
+  });
+});
+
+describe('leitor do protocolo', () => {
+  function reader() {
+    const party = [make(4, 10)];
+    const foes = [make(16, 10)];
+    return new ProtocolReader({
+      kind: 'wild',
+      resolve: (ident) => {
+        const side = ident.startsWith('p1') ? 'player' : 'foe';
+        const pokemon = side === 'player' ? party[0] : foes[0];
+        return { side, index: 0, pokemon };
+      },
+      label: (side, pokemon) => (side === 'player' ? ctx.species[pokemon.species].n : `${ctx.species[pokemon.species].n} selvagem`),
+      plain: (pokemon) => ctx.species[pokemon.species].n,
+      moveName: (id) => ctx.moves[id]?.n ?? id,
+      onSwitchIn: () => undefined,
+      onFaint: () => [],
+    });
+  }
+
+  it('critico e efetividade viram texto depois do dano, e o dano leva o HP do momento', () => {
+    const r = reader();
+    r.read(['|switch|p2a: m0|Pidgey, L10|30/30', '|switch|p1a: m0|Charmander, L10|28/28']);
+    const events = r.read([
+      '|move|p1a: m0|Ember|p2a: m0',
+      '|-crit|p2a: m0',
+      '|-supereffective|p2a: m0',
+      '|split|p2',
+      '|-damage|p2a: m0|12/30',
+      '|-damage|p2a: m0|12/30',
+    ]);
+    expect(events.map((e) => e.t)).toEqual(['text', 'useMove', 'damage', 'text', 'text']);
+    expect(events[2]).toMatchObject({ side: 'foe', amount: 18, hp: 12, maxHp: 30, crit: true, effectiveness: 'super' });
+    expect(events[3]).toEqual({ t: 'text', text: 'Foi um acerto critico!' });
+    expect(events[4]).toEqual({ t: 'text', text: 'Foi super eficaz!' });
+  });
+
+  it('veneno toca a animacao antes do dano e fala em portugues', () => {
+    const r = reader();
+    r.read(['|switch|p1a: m0|Charmander, L10|28/28 psn']);
+    const events = r.read(['|-damage|p1a: m0|25/28 psn|[from] psn']);
+    expect(events[0]).toEqual({ t: 'anim', side: 'player', anim: 'psn' });
+    expect(events[1]).toMatchObject({ t: 'damage', amount: 3, cause: 'psn' });
+    expect(events[2]).toEqual({ t: 'text', text: 'Charmander sofre com o veneno!' });
+  });
+
+  it('atributos com o artigo certo', () => {
+    const r = reader();
+    r.read(['|switch|p2a: m0|Pidgey, L10|30/30']);
+    const events = r.read(['|-unboost|p2a: m0|def|1', '|-boost|p2a: m0|atk|2']);
+    expect(events.filter((e) => e.t === 'text')).toEqual([
+      { t: 'text', text: 'A Defesa de Pidgey selvagem caiu!' },
+      { t: 'text', text: 'O Ataque de Pidgey selvagem subiu muito!' },
+    ]);
   });
 });
 

@@ -11,6 +11,7 @@ export const REPOS = {
   crystal: 'pret/pokecrystal',
   sprites: 'PokeAPI/sprites',
   veekun: 'veekun/pokedex',
+  showdown: 'smogon/pokemon-showdown-client',
 } as const;
 
 export type RepoKey = keyof typeof REPOS;
@@ -21,6 +22,7 @@ const BRANCH: Record<RepoKey, string> = {
   crystal: 'master',
   sprites: 'master',
   veekun: 'master',
+  showdown: 'master',
 };
 
 function rawUrl(repo: RepoKey, path: string): string {

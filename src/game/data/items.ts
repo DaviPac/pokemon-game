@@ -3,7 +3,7 @@
  * As bolas e os remedios de batalha vem dos modulos que ja os implementam.
  */
 import { BALLS } from '../battle/capture.js';
-import { BATTLE_ITEMS } from '../battle/engine.js';
+import { BATTLE_ITEMS } from '../battle/items.js';
 
 export type ItemCategory = 'ball' | 'medicine' | 'other';
 

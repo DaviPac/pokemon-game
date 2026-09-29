@@ -238,7 +238,11 @@ async function walkUntilBattle(page: Page, attempts: number): Promise<boolean> {
 /** Foge da batalha em andamento, se houver, e espera voltar ao mapa. */
 async function leaveBattle(page: Page): Promise<void> {
   for (let i = 0; i < 6; i++) {
-    if (!(await page.locator('.battle').count())) return;
+    // Se a bola pegou, a tela da captura fica por cima esperando o toque.
+    await clickIfPresent(page, '.battle-continue');
+    await clickIfPresent(page, '.caught-continue');
+    await page.waitForTimeout(400);
+    if (!(await page.locator('.battle, .caught-screen').count())) return;
     await clickIfPresent(page, '.action-run');
     await page.waitForTimeout(1800);
     await dismissDialogue(page);

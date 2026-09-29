@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { RNG } from '../game/core/rng.js';
 import { loadJsonAsset, loadMap } from '../game/data/assets.js';
-import { Battle } from '../game/battle/engine.js';
+import type { Battle } from '../game/battle/engine.js';
 import type { BattleOutcome } from '../game/battle/types.js';
 import { createPokemon, isFainted, type Pokemon } from '../game/pokemon/pokemon.js';
 import { isReady } from '../game/progression/expeditions.js';
@@ -34,6 +34,16 @@ import { Dialogue } from './shell/Dialogue.js';
 import { UpdateBanner } from './shell/UpdateBanner.js';
 import { notesSince, type PatchNote } from '../data/patchNotes.js';
 import { APP_VERSION } from '../state/updates.js';
+
+/**
+ * O motor de batalha vem do Pokemon Showdown e carrega o simulador inteiro: ele
+ * fica num pedaco separado do app, baixado so quando o jogo comeca de fato.
+ */
+let engineModule: Promise<typeof import('../game/battle/engine.js')> | null = null;
+function loadEngine() {
+  engineModule ??= import('../game/battle/engine.js');
+  return engineModule;
+}
 
 /** Por onde o jogo esta passando: menu, abertura ou jogando. */
 type Stage = 'title' | 'intro' | 'playing';
@@ -82,6 +92,8 @@ export function App() {
   // Virada do dia: zera as missoes e atualiza o streak de login.
   useEffect(() => {
     if (!save) return;
+    // Adianta o motor de batalha, para o primeiro encontro nao esperar por ele.
+    void loadEngine();
     const state = useGame.getState();
     state.update((s) => {
       rolloverDaily(s);
@@ -108,7 +120,7 @@ export function App() {
     if (!state.ctx || !state.chart || !state.save) return;
     if (state.save.party.every(isFainted)) return;
 
-    const map = await loadMap(mapId);
+    const [map, { Battle }] = await Promise.all([loadMap(mapId), loadEngine()]);
     const encounter = rollEncounter(state.ctx, rngRef.current, map, kind, {
       shinyChanceFor: (species) => shinyChanceFor(state.save, species),
     });
@@ -165,23 +177,28 @@ export function App() {
           setDialogue('Seus Pokemon estao esgotados. Passe num Centro Pokemon antes.');
           return;
         }
-        const party = buildTrainerParty(state.ctx, rngRef.current, interaction.trainer);
-        const highest = Math.max(...interaction.trainer.party.map((p) => p.level));
-        setBattle({
-          battle: new Battle(
-            state.ctx,
-            state.chart,
-            rngRef.current,
-            state.save.party.map(cloneMon),
-            party,
-            {
-              kind: 'trainer',
-              foeName: trainerTitle(interaction.trainer),
-              canRun: false,
-            },
-          ),
-          environment: { isCave: false, isWater: false, isNight: isNight() },
-          prize: highest * 60,
+        const trainer = interaction.trainer;
+        void loadEngine().then(({ Battle }) => {
+          const current = useGame.getState();
+          if (!current.ctx || !current.chart || !current.save) return;
+          const party = buildTrainerParty(current.ctx, rngRef.current, trainer);
+          const highest = Math.max(...trainer.party.map((p) => p.level));
+          setBattle({
+            battle: new Battle(
+              current.ctx,
+              current.chart,
+              rngRef.current,
+              current.save.party.map(cloneMon),
+              party,
+              {
+                kind: 'trainer',
+                foeName: trainerTitle(trainer),
+                canRun: false,
+              },
+            ),
+            environment: { isCave: false, isWater: false, isNight: isNight() },
+            prize: highest * 60,
+          });
         });
         break;
       }

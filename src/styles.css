@@ -991,6 +991,83 @@ select {
 
 /* Efeitos das animacoes de golpe */
 
+/*
+ * Camadas das animacoes do Showdown. Os fundos ficam entre o campo e os
+ * Pokemon; os efeitos, por cima deles e por baixo do HUD. Cada efeito e uma
+ * imagem posicionada so por transform, a partir do canto.
+ */
+.battle-bgfx,
+.battle-fx {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.battle-bgfx {
+  z-index: 0;
+}
+
+.battle-fx {
+  z-index: 1;
+}
+
+.sd-effect {
+  position: absolute;
+  left: 0;
+  top: 0;
+  display: block;
+  max-width: none;
+  transform-origin: 0 0;
+  will-change: transform, opacity;
+}
+
+.sd-background {
+  position: absolute;
+  inset: 0;
+}
+
+/* Clima em campo, como o Showdown mostra: o cenario ganha a chuva por cima. */
+.field-weather {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.45;
+  animation: weather-in 0.6s ease both;
+}
+
+.field-weather-raindance,
+.field-weather-primordialsea {
+  background-image: url('/assets/fx/weather-raindance.jpg');
+  mix-blend-mode: multiply;
+}
+
+.field-weather-sunnyday,
+.field-weather-desolateland {
+  background-image: url('/assets/fx/weather-sunnyday.jpg');
+  mix-blend-mode: screen;
+  opacity: 0.35;
+}
+
+.field-weather-sandstorm {
+  background-image: url('/assets/fx/weather-sandstorm.png');
+  opacity: 0.55;
+}
+
+.field-weather-hail {
+  background-image: url('/assets/fx/weather-hail.png');
+  opacity: 0.55;
+}
+
+@keyframes weather-in {
+  from {
+    opacity: 0;
+  }
+}
+
+
 .fx-curtain {
   position: absolute;
   inset: 0;
@@ -1068,6 +1145,12 @@ select {
 
 .battle-action:active {
   transform: scale(0.97);
+}
+
+/* Preso num golpe de dois turnos: so Lutar continua valendo. */
+.battle-action:disabled {
+  opacity: 0.4;
+  filter: saturate(0.4);
 }
 
 .action-fight {
