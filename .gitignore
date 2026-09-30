@@ -9,3 +9,6 @@ screenshots/
 .env
 .env.*
 !.env.example
+
+# APKs baixados do GitHub Releases para conferir; o build fica no workflow.
+apk/
