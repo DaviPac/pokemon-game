@@ -60,6 +60,10 @@ jobs:
 
       - name: App NativeScript
         working-directory: mobile
+        env:
+          # So celulares de verdade (ARM): x86 e x86_64 servem apenas ao
+          # emulador e dobrariam o tamanho do APK.
+          ORG_GRADLE_PROJECT_abis: arm64-v8a,armeabi-v7a
         run: |
           npm ci
           npm install -g nativescript@9.1.1

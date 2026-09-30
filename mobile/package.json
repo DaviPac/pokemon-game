@@ -6,7 +6,7 @@
   "main": "src/app.ts",
   "scripts": {
     "web": "npm --prefix .. run build:native",
-    "build": "ns build android --release --key-store-path keys/pokedeluge-sideload.keystore --key-store-password pokedeluge --key-store-alias pokedeluge --key-store-alias-password pokedeluge --copy-to dist/PokeDeluge.apk",
+    "build": "ORG_GRADLE_PROJECT_abis=arm64-v8a,armeabi-v7a ns build android --release --key-store-path keys/pokedeluge-sideload.keystore --key-store-password pokedeluge --key-store-alias pokedeluge --key-store-alias-password pokedeluge --copy-to dist/PokeDeluge.apk",
     "build:debug": "ns build android --copy-to dist/PokeDeluge-debug.apk"
   },
   "dependencies": {

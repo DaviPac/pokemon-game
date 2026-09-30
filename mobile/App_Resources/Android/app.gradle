@@ -18,10 +18,8 @@ android {
 
     generatedDensities = []
 
-    // Celulares de verdade (ARM) e o emulador de 64 bits.
-    ndk {
-      abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
-    }
+    // As arquiteturas saem da propriedade `abis` (ver package.json e o
+    // workflow): o template do NativeScript so olha para ela.
   }
 
   aaptOptions {
