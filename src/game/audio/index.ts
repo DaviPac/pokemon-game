@@ -6,7 +6,7 @@
  * que comeca sozinha assim que o audio e liberado.
  */
 import type { MoveCategory, PokemonType } from '../data/types.js';
-import { playMoveSfx } from './moves.js';
+import { IMPACT_DURATION, MOVE_DURATION, playImpactSfx, playMoveSfx, type Impact } from './moves.js';
 import { MusicPlayer, type MusicSong } from './music.js';
 import { playSfx, type SfxName } from './sfx.js';
 
@@ -20,6 +20,9 @@ const CRY_FALLBACK = 'https://raw.githubusercontent.com/PokeAPI/cries/main/cries
 
 export type SongId = string;
 
+/** Quanto a musica desce enquanto um golpe soa (0.3 = 30% do volume). */
+const DUCK_LEVEL = 0.3;
+
 interface PendingMusic {
   id: SongId;
   loop: boolean;
@@ -29,6 +32,8 @@ class AudioEngine {
   private context: AudioContext | null = null;
   private musicGain: GainNode | null = null;
   private sfxGain: GainNode | null = null;
+  /** Limitador dos efeitos: deixa o golpe alto sem estourar. */
+  private sfxLimiter: DynamicsCompressorNode | null = null;
   private music: MusicPlayer | null = null;
 
   private songs = new Map<SongId, Promise<MusicSong | null>>();
@@ -71,7 +76,14 @@ class AudioEngine {
     this.musicGain = context.createGain();
     this.sfxGain = context.createGain();
     this.musicGain.connect(context.destination);
-    this.sfxGain.connect(context.destination);
+    this.sfxLimiter = context.createDynamicsCompressor();
+    this.sfxLimiter.threshold.value = -6;
+    this.sfxLimiter.knee.value = 4;
+    this.sfxLimiter.ratio.value = 12;
+    this.sfxLimiter.attack.value = 0.002;
+    this.sfxLimiter.release.value = 0.08;
+    this.sfxGain.connect(this.sfxLimiter);
+    this.sfxLimiter.connect(context.destination);
     this.applyVolumes();
 
     this.music = new MusicPlayer(context, this.musicGain);
@@ -234,6 +246,11 @@ class AudioEngine {
 
   sfx(name: SfxName): void {
     if (!this.context || !this.sfxGain || this.muted) return;
+    // O acerto do golpe tem som proprio, feito para caber no alto-falante.
+    if (name === 'hit' || name === 'super' || name === 'weak') {
+      this.impact(name);
+      return;
+    }
     playSfx(this.context, this.sfxGain, name);
   }
 
@@ -242,7 +259,37 @@ class AudioEngine {
     if (!this.context || !this.sfxGain || this.muted) return;
     // Registrado para depuracao e para os testes de tela, que nao escutam.
     this.lastMove = `${type}/${category}`;
+    this.duck(MOVE_DURATION);
     playMoveSfx(this.context, this.sfxGain, type, category);
+  }
+
+  private impact(kind: Impact): void {
+    if (!this.context || !this.sfxGain) return;
+    this.lastImpact = kind;
+    this.duck(IMPACT_DURATION[kind]);
+    playImpactSfx(this.context, this.sfxGain, kind);
+  }
+
+  /** O ultimo acerto que tocou, para os testes de tela. */
+  lastImpact: Impact | null = null;
+
+  /**
+   * A musica abre espaco para o golpe: desce rapido, espera o efeito passar e
+   * volta. Era o que faltava -- o tema de batalha tocava por cima e o golpe
+   * sumia, mesmo estando la.
+   */
+  private duck(seconds: number): void {
+    const context = this.context;
+    const gain = this.musicGain?.gain;
+    if (!context || !gain || this.muted) return;
+    const now = context.currentTime;
+    const full = this.musicVolume;
+    const low = full * DUCK_LEVEL;
+    gain.cancelScheduledValues(now);
+    gain.setValueAtTime(Math.min(gain.value, full), now);
+    gain.linearRampToValueAtTime(low, now + 0.03);
+    gain.setValueAtTime(low, now + 0.03 + seconds);
+    gain.linearRampToValueAtTime(full, now + 0.03 + seconds + 0.3);
   }
 
   /** Grito do Pokemon, vindo do repositorio de audio do PokeAPI. */

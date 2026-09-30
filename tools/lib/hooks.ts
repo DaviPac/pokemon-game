@@ -36,7 +36,12 @@ export interface GameHandle {
 declare global {
   interface Window {
     __overworld?: OverworldHandle;
-    __audio?: { nowPlaying: string | null; state: string; lastMove: string | null };
+    __audio?: {
+      nowPlaying: string | null;
+      state: string;
+      lastMove: string | null;
+      lastImpact: string | null;
+    };
     __game?: GameHandle;
   }
 }

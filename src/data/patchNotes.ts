@@ -17,6 +17,25 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
+    version: '0.6.1',
+    date: '2026-09-30',
+    title: 'Da para ouvir os golpes',
+    changes: [
+      {
+        kind: 'correcao',
+        text: 'O som dos golpes e do dano estava la, mas o tema de batalha tocava por cima e ele sumia. Agora a musica abre espaco por um instante a cada golpe e volta logo em seguida.',
+      },
+      {
+        kind: 'correcao',
+        text: 'O acerto era um estalo grave demais para o alto-falante do celular. Ganhou um som novo, mais agudo e seco, e o super efetivo bate duas vezes.',
+      },
+      {
+        kind: 'melhoria',
+        text: 'Os golpes soam mais altos e mais claros, com um limitador que evita distorcer mesmo com o volume no maximo.',
+      },
+    ],
+  },
+  {
     version: '0.6.0',
     date: '2026-09-29',
     title: 'Batalhas com o motor do Pokemon Showdown',

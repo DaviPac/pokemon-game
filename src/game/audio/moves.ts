@@ -74,6 +74,9 @@ export function playMoveSfx(
 function gesturesFor(color: TypeColor, category: MoveCategory): Gesture[] {
   const { pitch, noise, timbre } = color;
 
+  // Os ganhos e as faixas foram medidos: alto-falante de celular quase nao
+  // reproduz abaixo de ~500 Hz, entao o corpo de cada golpe mora entre 700 Hz
+  // e 4 kHz. O grave fica so como reforco para fone de ouvido.
   if (category === 'Physical') {
     // Investida: o ar passa, e entao vem o baque.
     return [
@@ -82,15 +85,15 @@ function gesturesFor(color: TypeColor, category: MoveCategory): Gesture[] {
         from: pitch * 2,
         to: pitch,
         duration: 0.14,
-        gain: 0.3 + noise * 0.3,
-        filter: { type: 'bandpass', from: 1400, to: 600 },
+        gain: 0.5 + noise * 0.35,
+        filter: { type: 'bandpass', from: 3200, to: 1100 },
       },
       {
         timbre,
-        from: pitch * 0.8,
-        to: pitch * 0.4,
+        from: pitch * 1.6,
+        to: pitch * 0.5,
         duration: 0.16,
-        gain: 0.34,
+        gain: 0.42,
         at: 0.1,
       },
     ];
@@ -101,28 +104,61 @@ function gesturesFor(color: TypeColor, category: MoveCategory): Gesture[] {
     return [
       {
         timbre,
-        from: pitch * 2.2,
-        to: pitch * 0.7,
-        duration: 0.26,
-        gain: 0.34,
+        from: pitch * 3,
+        to: pitch * 0.9,
+        duration: 0.28,
+        gain: 0.42,
       },
       {
         timbre: 'noise',
         from: pitch,
         to: pitch * 0.5,
-        duration: 0.3,
-        gain: 0.12 + noise * 0.26,
+        duration: 0.32,
+        gain: 0.25 + noise * 0.35,
         at: 0.04,
-        filter: { type: 'lowpass', from: 4200, to: 700 },
+        filter: { type: 'bandpass', from: 5200, to: 1200 },
       },
     ];
   }
 
   // Status: dois brilhos subindo, sem impacto nenhum.
   return [
-    { timbre: 'pulse', from: pitch, to: pitch * 1.5, duration: 0.14, gain: 0.22 },
-    { timbre: 'pulse', from: pitch * 1.5, to: pitch * 2.2, duration: 0.2, gain: 0.2, at: 0.12 },
+    { timbre: 'pulse', from: pitch, to: pitch * 1.5, duration: 0.14, gain: 0.3 },
+    { timbre: 'pulse', from: pitch * 1.5, to: pitch * 2.2, duration: 0.2, gain: 0.28, at: 0.12 },
   ];
+}
+
+export type Impact = 'hit' | 'super' | 'weak';
+
+/**
+ * O golpe acertando. Antes era ruido abaixo de 380 Hz -- um estalo que o
+ * alto-falante do celular simplesmente nao toca. Agora e um estalo agudo com
+ * um "crunch" quadrado; o super efetivo bate duas vezes, o pouco efetivo e
+ * um toque abafado.
+ */
+const IMPACTS: Record<Impact, Gesture[]> = {
+  hit: [
+    { timbre: 'noise', from: 0, to: 0, duration: 0.16, gain: 0.8, filter: { type: 'bandpass', from: 3000, to: 800 } },
+    { timbre: 'square', from: 260, to: 90, duration: 0.12, gain: 0.34 },
+  ],
+  super: [
+    { timbre: 'noise', from: 0, to: 0, duration: 0.12, gain: 0.9, filter: { type: 'bandpass', from: 3600, to: 1000 } },
+    { timbre: 'square', from: 340, to: 110, duration: 0.1, gain: 0.38 },
+    { timbre: 'noise', from: 0, to: 0, duration: 0.2, gain: 0.95, at: 0.1, filter: { type: 'bandpass', from: 3200, to: 600 } },
+    { timbre: 'square', from: 300, to: 70, duration: 0.2, gain: 0.4, at: 0.1 },
+  ],
+  weak: [
+    { timbre: 'noise', from: 0, to: 0, duration: 0.1, gain: 0.5, filter: { type: 'bandpass', from: 1800, to: 900 } },
+  ],
+};
+
+/** Quanto tempo cada som ocupa, para a musica abrir espaco so o necessario. */
+export const IMPACT_DURATION: Record<Impact, number> = { hit: 0.18, super: 0.32, weak: 0.12 };
+export const MOVE_DURATION = 0.36;
+
+export function playImpactSfx(context: AudioContext, destination: AudioNode, impact: Impact): void {
+  const start = context.currentTime + 0.01;
+  for (const gesture of IMPACTS[impact]) play(context, destination, gesture, start);
 }
 
 let cachedPulse: PeriodicWave | null = null;

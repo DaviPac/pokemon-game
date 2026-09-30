@@ -15,6 +15,53 @@ import { startNewGame, teleport, walkUntilBattle } from './lib/play.js';
 const VIEWPORT = { width: 390, height: 844 };
 const CHROMIUM = process.env.CHROMIUM_PATH ?? '/opt/pw-browsers/chromium-1194/chrome-linux/chrome';
 
+/**
+ * Analisadores nas saidas de efeito e de musica, depois de um passa-alta em
+ * 500 Hz: e o que um alto-falante de celular consegue tocar.
+ */
+const PROBE_START = `(() => {
+  const a = window.__audio;
+  const ctx = a.context;
+  const tap = (node) => {
+    const hp = ctx.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 500;
+    const an = ctx.createAnalyser();
+    an.fftSize = 2048;
+    node.connect(hp);
+    hp.connect(an);
+    return an;
+  };
+  const sfx = tap(a.sfxGain);
+  const music = tap(a.musicGain);
+  const buf = new Float32Array(2048);
+  const rms = (an) => {
+    an.getFloatTimeDomainData(buf);
+    let sum = 0;
+    for (const v of buf) sum += v * v;
+    return Math.sqrt(sum / buf.length);
+  };
+  a.lastImpact = null;
+  window.__probe = { log: [] };
+  window.__probe.timer = setInterval(() => window.__probe.log.push([rms(sfx), rms(music)]), 20);
+})()`;
+
+const PROBE_STOP = `(() => {
+  clearInterval(window.__probe.timer);
+  const log = window.__probe.log;
+  let at = 0;
+  for (let i = 0; i < log.length; i++) if (log[i][0] > log[at][0]) at = i;
+  const around = log.slice(Math.max(0, at - 1), at + 2).map((x) => x[1]);
+  const a = window.__audio;
+  return {
+    peak: log[at][0],
+    musicThen: Math.max(...around),
+    musicLevel: a.musicGain.gain.value,
+    musicVolume: a.musicVolume,
+    impact: a.lastImpact,
+  };
+})()`;
+
 interface Sample {
   time: number;
   effects: number;
@@ -110,10 +157,32 @@ async function main(): Promise<void> {
 
     // --- Ember: o efeito viaja ate o oponente ----------------------------------
     console.log('\n3. Ember: o fogo vai do atacante ate o alvo');
+    // Ouvido de celular: so o que passa de 500 Hz conta, e a musica e medida
+    // no mesmo instante do golpe.
+    await page.evaluate(PROBE_START);
     const ember = await useMove(page, 'Ember', outDir, '22-ember');
+    await page.waitForTimeout(600);
+    const sound = (await page.evaluate(PROBE_STOP)) as {
+      peak: number;
+      musicThen: number;
+      musicLevel: number;
+      musicVolume: number;
+      impact: string | null;
+    };
     const emberEffects = ember.filter((s) => s.effects > 0);
     check('efeitos do Showdown na tela', emberEffects.length > 0, `${Math.max(0, ...ember.map((s) => s.effects))} no pico`);
     check('o fogo termina em cima do oponente', nearer(emberEffects.slice(-3), 'foe'), describe(emberEffects.slice(-3)));
+    check('o acerto tocou som', sound.impact !== null, `${sound.impact}`);
+    check(
+      'golpe e acerto soam por cima da musica, na faixa do alto-falante',
+      sound.peak > sound.musicThen * 1.5 && sound.peak > 0.08,
+      `efeito=${sound.peak.toFixed(3)} musica no instante=${sound.musicThen.toFixed(3)}`,
+    );
+    check(
+      'a musica volta ao volume normal depois do golpe',
+      Math.abs(sound.musicLevel - sound.musicVolume) < 0.01,
+      `ganho=${sound.musicLevel.toFixed(2)} esperado=${sound.musicVolume.toFixed(2)}`,
+    );
 
     // --- Fly: o Pokemon some no turno de preparo --------------------------------
     if (await page.locator('.battle').count()) {
