@@ -1,14 +1,13 @@
 {
   "name": "pokedeluge",
   "private": true,
-  "version": "0.7.0",
+  "version": "0.6.0",
   "type": "module",
   "description": "RPG de Pokemon jogavel no navegador, PWA mobile-first",
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
-    "build:native": "tsc --noEmit && VITE_NATIVE=1 vite build --outDir mobile/App_Resources/Android/src/main/assets/www --emptyOutDir",
     "assets": "tsx tools/build-all.ts",
     "assets:world": "tsx tools/build-world.ts",
     "assets:dex": "tsx tools/build-dex.ts",

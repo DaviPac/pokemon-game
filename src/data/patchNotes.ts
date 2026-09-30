@@ -17,21 +17,6 @@ export interface PatchNote {
 
 export const PATCH_NOTES: PatchNote[] = [
   {
-    version: '0.7.0',
-    date: '2026-09-30',
-    title: 'PokeDeluge para Android',
-    changes: [
-      {
-        kind: 'novo',
-        text: 'O jogo ganhou um app para Android, feito em NativeScript: instala direto pelo APK, abre sem navegador e ja traz Kanto inteira, as musicas e as animacoes dentro do app.',
-      },
-      {
-        kind: 'novo',
-        text: 'No app, o som para quando voce sai para outro aplicativo, o botao voltar deixa o jogo em segundo plano sem perder nada, e o backup do save usa o seletor de arquivos do Android.',
-      },
-    ],
-  },
-  {
     version: '0.6.0',
     date: '2026-09-29',
     title: 'Batalhas com o motor do Pokemon Showdown',

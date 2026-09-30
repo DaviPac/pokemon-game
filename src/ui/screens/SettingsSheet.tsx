@@ -11,7 +11,6 @@ import { useSettings } from '../../state/settings.js';
 import { APP_VERSION, formatBuildTime, useUpdates } from '../../state/updates.js';
 import { PatchNotes } from './PatchNotes.js';
 import { Sheet } from '../shell/Sheet.js';
-import { isNativeApp } from '../../platform/native.js';
 
 export function SettingsSheet({ onClose }: { onClose: () => void }) {
   const settings = useSettings();
@@ -128,9 +127,7 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
           disabled={!save}
           onClick={() => {
             if (save) exportSave(save);
-            setMessage(
-              isNativeApp() ? 'Escolha onde guardar o backup.' : 'Backup salvo nos seus downloads.',
-            );
+            setMessage('Backup salvo nos seus downloads.');
           }}
         >
           Exportar backup
@@ -138,22 +135,20 @@ export function SettingsSheet({ onClose }: { onClose: () => void }) {
         <button type="button" className="secondary-button" onClick={() => fileRef.current?.click()}>
           Importar backup
         </button>
-        {!isNativeApp() && (
-          <button
-            type="button"
-            className="secondary-button"
-            onClick={async () => {
-              const granted = await requestPersistentStorage();
-              setMessage(
-                granted
-                  ? 'Pronto: o navegador vai preservar seus dados.'
-                  : 'O navegador nao garantiu a preservacao. O backup em arquivo continua valendo.',
-              );
-            }}
-          >
-            Proteger dados neste aparelho
-          </button>
-        )}
+        <button
+          type="button"
+          className="secondary-button"
+          onClick={async () => {
+            const granted = await requestPersistentStorage();
+            setMessage(
+              granted
+                ? 'Pronto: o navegador vai preservar seus dados.'
+                : 'O navegador nao garantiu a preservacao. O backup em arquivo continua valendo.',
+            );
+          }}
+        >
+          Proteger dados neste aparelho
+        </button>
         <input
           ref={fileRef}
           type="file"

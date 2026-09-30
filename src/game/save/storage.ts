@@ -8,7 +8,6 @@
  */
 import { openDB, type IDBPDatabase } from 'idb';
 import { SAVE_VERSION, migrate, type SaveData } from './schema.js';
-import { nativeBridge } from '../../platform/native.js';
 
 const DB_NAME = 'pokedeluge';
 const STORE = 'saves';
@@ -86,20 +85,12 @@ export async function requestPersistentStorage(): Promise<boolean> {
 }
 
 export function exportSave(save: SaveData): void {
-  const stamp = new Date().toISOString().slice(0, 10);
-  const name = `pokedeluge-${save.playerName || 'save'}-${stamp}.json`;
-  // No app Android nao existe pasta de downloads da WebView: o proprio
-  // Android pergunta onde guardar.
-  const native = nativeBridge();
-  if (native) {
-    native.saveFile(name, 'application/json', JSON.stringify(save));
-    return;
-  }
   const blob = new Blob([JSON.stringify(save)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0, 10);
   link.href = url;
-  link.download = name;
+  link.download = `pokedeluge-${save.playerName || 'save'}-${stamp}.json`;
   link.click();
   URL.revokeObjectURL(url);
 }

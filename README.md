@@ -10,7 +10,6 @@ explorar, batalhas animadas e progressao que continua com o app fechado.
   (`@pkmn/sim`), com as animacoes de golpe do Showdown tocadas no campo 3D do jogo.
 - **Som**: as musicas originais do FireRed, tocadas por um sintetizador chiptune.
 - **Offline**: save local em IndexedDB, sem contas e sem servidor.
-- **Android**: app nativo em NativeScript (`mobile/`), com APK gerado pelo GitHub Actions.
 - **Idioma**: interface em pt-BR.
 
 ## Rodando
@@ -34,7 +33,6 @@ um clone novo ja roda com `npm install && npm run dev`.
 | `npm run test:anims` | Confere as animacoes de golpe do Showdown num navegador real |
 | `npm run test:update` | Testa o ciclo de atualizacao do PWA num navegador real |
 | `npm run typecheck` | Só o typecheck |
-| `npm run build:native` | Build web que vai dentro do APK (sem service worker) |
 
 ## Modos de locomocao
 
@@ -126,44 +124,6 @@ ao validador de times, saem do build.
   [lightning-shock-spell](http://opengameart.org/content/lightning-shock-spell)).
   `rocks.png`, `rock1.png`, `rock2.png` (GPLv3) e `bone.png` nao sao
   distribuidas: a cena usa `rock3.png` no lugar delas.
-
-## App para Android
-
-`mobile/` e um app NativeScript. O jogo e o mesmo do navegador: `npm run
-build:native` gera o build web direto em
-`mobile/App_Resources/Android/src/main/assets/www`, e ele roda numa WebView
-nativa (`GameWebView.java`) que serve os arquivos de dentro do APK pela origem
-`https://appassets.androidplatform.net` -- uma origem https de verdade, onde o
-save em IndexedDB, o `fetch` e os imports dinamicos funcionam como no navegador.
-O NativeScript sobe o app e cuida do que e do sistema:
-
-- o ciclo de vida: ir para o fundo pausa a WebView e cala o som
-  (`native-pause`/`native-resume`, ouvidos pelo `AudioEngine`);
-- o botao voltar, que manda o jogo para o fundo em vez de fechar;
-- o backup do save: exportar abre o "Salvar como" do Android (a ponte
-  `window.PokeNative`, em `src/platform/native.ts`) e importar abre o seletor
-  de arquivos.
-
-O service worker fica desligado no build do APK: os arquivos ja moram no app e a
-atualizacao chega com um APK novo. Os sprites e os gritos dos Pokemon continuam
-vindo da rede na primeira vez e ficam no cache da WebView.
-
-### Gerando o APK
-
-O workflow `.github/workflows/android.yml` compila o APK a cada mudanca no jogo
-e o publica como artefato `PokeDeluge-apk` da execucao. Localmente, com o
-Android SDK (plataforma 35, build-tools 35.0.0) e o JDK 21 instalados:
-
-```bash
-npm run build:native
-cd mobile && npm install && npm run build   # sai em mobile/dist/PokeDeluge.apk
-```
-
-O APK e assinado com a chave de sideload em `mobile/keys/` (senha
-`pokedeluge`). Ela e publica de proposito: serve so para instalar fora da loja,
-e manter sempre a mesma chave deixa cada versao nova instalar por cima da
-anterior sem apagar o save. Para publicar numa loja, use uma chave propria e
-secreta.
 
 ## Som
 

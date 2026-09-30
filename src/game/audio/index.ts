@@ -108,9 +108,6 @@ class AudioEngine {
     window.addEventListener('pagehide', pause);
     window.addEventListener('freeze', pause);
     window.addEventListener('pageshow', resume);
-    // O app Android avisa direto quando vai para o fundo e quando volta.
-    window.addEventListener('native-pause', pause);
-    window.addEventListener('native-resume', resume);
   }
 
   get enabled(): boolean {
