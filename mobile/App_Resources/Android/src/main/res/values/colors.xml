@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<resources>
+    <!-- As cores do jogo (src/styles.css): o app nativo emenda com a WebView. -->
+    <color name="pd_background">#0D1117</color>
+    <color name="ns_primary">#0D1117</color>
+    <color name="ns_primaryDark">#0D1117</color>
+    <color name="ns_accent">#4F9DFF</color>
+    <color name="ic_launcher_background">#0D1117</color>
+</resources>

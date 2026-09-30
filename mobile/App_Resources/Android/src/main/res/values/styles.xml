@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <!-- Tela de abertura, enquanto o NativeScript sobe. -->
+    <style name="LaunchScreenThemeBase" parent="Theme.AppCompat.NoActionBar">
+        <item name="colorPrimary">@color/ns_primary</item>
+        <item name="colorPrimaryDark">@color/ns_primaryDark</item>
+        <item name="colorAccent">@color/ns_accent</item>
+        <item name="android:windowBackground">@drawable/splash_screen</item>
+        <item name="android:statusBarColor">@color/pd_background</item>
+        <item name="android:navigationBarColor">@color/pd_background</item>
+    </style>
+
+    <style name="LaunchScreenTheme" parent="LaunchScreenThemeBase">
+    </style>
+
+    <!-- Tema do jogo: escuro, sem barra de acao, barras do sistema na cor do fundo. -->
+    <style name="AppThemeBase" parent="Theme.AppCompat.NoActionBar">
+        <item name="toolbarStyle">@style/NativeScriptToolbarStyle</item>
+        <item name="colorPrimary">@color/ns_primary</item>
+        <item name="colorPrimaryDark">@color/ns_primaryDark</item>
+        <item name="colorAccent">@color/ns_accent</item>
+        <item name="android:windowBackground">@color/pd_background</item>
+        <item name="android:statusBarColor">@color/pd_background</item>
+        <item name="android:navigationBarColor">@color/pd_background</item>
+    </style>
+
+    <style name="AppTheme" parent="AppThemeBase">
+    </style>
+
+    <style name="NativeScriptToolbarStyleBase" parent="Widget.AppCompat.Toolbar">
+        <item name="android:background">@color/ns_primary</item>
+        <item name="theme">@style/ThemeOverlay.AppCompat.ActionBar</item>
+        <item name="popupTheme">@style/ThemeOverlay.AppCompat</item>
+    </style>
+
+    <style name="NativeScriptToolbarStyle" parent="NativeScriptToolbarStyleBase">
+    </style>
+</resources>

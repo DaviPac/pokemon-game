@@ -1,0 +1,7 @@
+node_modules/
+platforms/
+hooks/
+dist/
+.ns-build-pbxgroup-data.json
+# O build web do jogo e gerado por `npm run web`.
+App_Resources/Android/src/main/assets/www/

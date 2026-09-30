@@ -1,0 +1,74 @@
+# Gera o APK do app Android (mobile/, NativeScript) a cada mudanca no jogo.
+#
+# O APK sai como artefato da execucao ("PokeDeluge-apk"), assinado com a chave
+# de sideload de mobile/keys -- a mesma sempre, para uma versao nova instalar
+# por cima da antiga sem apagar o save.
+name: APK Android
+
+on:
+  push:
+    paths:
+      - 'src/**'
+      - 'public/**'
+      - 'mobile/**'
+      - 'package.json'
+      - 'package-lock.json'
+      - 'vite.config.ts'
+      - '.github/workflows/android.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: android-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            mobile/package-lock.json
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      - name: SDK Android (plataforma 35 e build-tools 35.0.0)
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+
+      - name: Jogo (build web que vai dentro do APK)
+        run: |
+          npm ci
+          npm run build:native
+
+      - name: App NativeScript
+        working-directory: mobile
+        run: |
+          npm ci
+          npm install -g nativescript@9.1.1
+          ns usage-reporting disable
+          ns error-reporting disable
+          ns build android --release \
+            --key-store-path keys/pokedeluge-sideload.keystore \
+            --key-store-password pokedeluge \
+            --key-store-alias pokedeluge \
+            --key-store-alias-password pokedeluge \
+            --copy-to dist/PokeDeluge.apk
+          ls -la dist
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PokeDeluge-apk
+          path: mobile/dist/PokeDeluge.apk
+          if-no-files-found: error
+          retention-days: 90

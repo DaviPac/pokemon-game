@@ -59,6 +59,9 @@ export const useUpdates = create<UpdateStore>((set) => ({
 
 /** Liga o service worker. Chamado uma vez, na subida do app. */
 export function initUpdates(): void {
+  // No APK os arquivos do jogo vem dentro do app e a atualizacao chega com um
+  // APK novo: service worker ali so atrapalharia.
+  if (import.meta.env.VITE_NATIVE === '1') return;
   applyUpdate = registerSW({
     immediate: true,
     onNeedRefresh() {

@@ -41,6 +41,9 @@ export default defineConfig({
     trimShowdownSim(),
     react(),
     VitePWA({
+      // O build do APK (npm run build:native) nao tem service worker: os
+      // arquivos ja moram dentro do app.
+      disable: process.env.VITE_NATIVE === '1',
       registerType: 'prompt',
       includeAssets: ['icons/*.png'],
       manifest: {
