@@ -41,10 +41,11 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: SDK Android (plataforma 35 e build-tools 35.0.0)
+      # O `ns` confere se o emulador existe antes de compilar, mesmo sem usa-lo.
+      - name: SDK Android (plataforma 35, build-tools 35.0.0 e emulador)
         run: |
           yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools" "emulator"
 
       - name: Jogo (build web que vai dentro do APK)
         run: |
