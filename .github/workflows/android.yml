@@ -1,6 +1,8 @@
 # Gera o APK do app Android (mobile/, NativeScript) a cada mudanca no jogo.
 #
-# O APK sai como artefato da execucao ("PokeDeluge-apk"), assinado com a chave
+# O APK sai como artefato da execucao ("PokeDeluge-apk") e num pre-release
+# "android-v<versao>" -- o link dele abre direto no celular para instalar.
+# Ele e assinado com a chave
 # de sideload de mobile/keys -- a mesma sempre, para uma versao nova instalar
 # por cima da antiga sem apagar o save.
 name: APK Android
@@ -16,6 +18,10 @@ on:
       - 'vite.config.ts'
       - '.github/workflows/android.yml'
   workflow_dispatch:
+
+# Publicar o APK no Releases precisa escrever no repositorio.
+permissions:
+  contents: write
 
 concurrency:
   group: android-${{ github.ref }}
@@ -73,3 +79,16 @@ jobs:
           path: mobile/dist/PokeDeluge.apk
           if-no-files-found: error
           retention-days: 90
+
+      - name: Publica no GitHub Releases
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          TAG="android-v$VERSION"
+          if ! gh release view "$TAG" > /dev/null 2>&1; then
+            gh release create "$TAG" --prerelease --target "$GITHUB_SHA" \
+              --title "PokeDeluge $VERSION para Android" \
+              --notes "APK do PokeDeluge $VERSION. Baixe PokeDeluge.apk no celular e abra para instalar (o Android pede para permitir apps de fora da loja). Atualizacoes instalam por cima sem apagar o save."
+          fi
+          gh release upload "$TAG" mobile/dist/PokeDeluge.apk --clobber
